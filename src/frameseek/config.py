@@ -59,6 +59,14 @@ class CaptionConfig:
 
 
 @dataclass
+class EmbedConfig:
+    text_model: str = "intfloat/multilingual-e5-small"     # question <-> captions and speech (100 languages)
+    image_model: str = "google/siglip2-base-patch16-224"   # question <-> frame pixels
+    speech_chunk_s: float = 15.0                           # merge transcript lines into ~15 s chunks
+    batch_size: int = 16
+
+
+@dataclass
 class Config:
     data_dir: Path = Path("data")
     device: str = "auto"
@@ -67,6 +75,7 @@ class Config:
     shots: ShotsConfig = field(default_factory=ShotsConfig)
     transcribe: TranscribeConfig = field(default_factory=TranscribeConfig)
     caption: CaptionConfig = field(default_factory=CaptionConfig)
+    embed: EmbedConfig = field(default_factory=EmbedConfig)
 
 
 def _pick(cls: type, raw: dict[str, Any]) -> dict[str, Any]:
@@ -89,6 +98,7 @@ def load_config(path: str | Path | None = None) -> Config:
     shots_raw = raw.pop("shots", {}) or {}
     transcribe_raw = raw.pop("transcribe", {}) or {}
     caption_raw = raw.pop("caption", {}) or {}
+    embed_raw = raw.pop("embed", {}) or {}
     top = _pick(Config, raw)
     return Config(
         data_dir=Path(top.get("data_dir", "data")),
@@ -98,4 +108,5 @@ def load_config(path: str | Path | None = None) -> Config:
         shots=ShotsConfig(**_pick(ShotsConfig, shots_raw)),
         transcribe=TranscribeConfig(**_pick(TranscribeConfig, transcribe_raw)),
         caption=CaptionConfig(**_pick(CaptionConfig, caption_raw)),
+        embed=EmbedConfig(**_pick(EmbedConfig, embed_raw)),
     )

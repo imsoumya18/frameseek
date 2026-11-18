@@ -8,8 +8,8 @@ and get the answer with the moment and the frame as evidence.
 frameseek runs entirely on your own machine with open-source models, and is being
 built with Indian-language videos (Hindi, Bengali, Telugu and code-mixed speech) in mind.
 
-**Status:** work in progress. Download, shot detection, speech-to-text and frame captioning
-work today; search and answering are next. See the [roadmap](#roadmap).
+**Status:** work in progress. Download, shot detection, speech-to-text, frame captioning and
+vector search work today; answering is next. See the [roadmap](#roadmap).
 
 ---
 
@@ -43,8 +43,8 @@ Expensive work happens once at indexing time, so answering stays fast.
 | Shots + keyframes | Splits the video at cuts and keeps one frame per shot, plus extra frames in long shots | Done |
 | Speech | Word-timestamped transcript: YouTube captions if their language checks out, else local Whisper | Done |
 | Captions | A local vision-language model describes each keyframe as structured JSON (objects, colours, people, on-screen text) | Done |
-| Index | Frame, caption and transcript embeddings in a local vector database | Next |
-| Search + answer | Finds candidate moments, looks again at those frames, answers with evidence | Planned |
+| Index | Caption, frame-pixel and speech embeddings in a local vector database (LanceDB) | Done |
+| Search + answer | Finds candidate moments, looks again at those frames, answers with evidence | Next |
 
 ## Quickstart
 
@@ -78,6 +78,12 @@ uv run frameseek caption "https://youtu.be/<video_id>"
 # Measure image size vs tokens, speed and caption quality on your machine
 uv run frameseek bench-vision data/<video_id>/keyframes/kf_0010_00.jpg
 
+# Embed captions, frame pixels and speech into a vector index
+uv run frameseek index "https://youtu.be/<video_id>"
+
+# Raw retrieval from each source (before fusion and answering)
+uv run frameseek search "https://youtu.be/<video_id>" "woman in a red saree"
+
 # Ask the vision model about any single image
 uv run frameseek describe path/to/image.jpg -p "What colour is the car?"
 ```
@@ -92,6 +98,7 @@ data/<video_id>/
 ├── keyframes/           one JPEG per keyframe
 ├── transcript.json      speech with word timestamps, its source and language
 ├── captions.jsonl       one structured caption per keyframe (resumable)
+├── index.lance/         vector tables: frames (caption + pixel vectors), speech chunks
 └── contact_sheet.jpg    every keyframe in a grid, for checking results by eye
 ```
 
@@ -108,6 +115,7 @@ On a MacBook Air (16 GB), with a 4.8-minute music video:
 | Keyframes | 88, versus 143 if sampling a frame every 2 s |
 | Vision model, one frame | ~20 s warm (14.5 s reading the image, 6.1 s writing the answer) |
 | Vision model, image size | Ollama gives every frame ~1,200 tokens whatever size is sent (384 to 1024 px): image size is not a lever there |
+| Captioning 88 keyframes | Qwen3-VL 4B: 18.2 s per frame, 27 min total (about 1.9x faster than the 8B; slower than benchmarked due to thermal throttling) |
 | Speech, Bengali song | YouTube captions came out in Hindi (wrong uploader tag). Whisper `small` detects Bengali, `large-v3-turbo` transcribes it in Bengali script (~144 s) |
 
 The last row is why the next steps index frames at low resolution with short
@@ -141,6 +149,7 @@ the order they were built, with diagrams and self-check questions:
 - [Shot detection](docs/03-shot-detection.md): change scores, adaptive thresholds, precision vs recall
 - [Speech to text](docs/04-speech-to-text.md): spectrograms, encoder-decoder, word timestamps, hallucinations
 - [Vision-language models](docs/05-vision-language-models.md): patches to tokens, structured captions, constrained decoding
+- [Embeddings and search](docs/06-embeddings-and-search.md): contrastive learning, cosine similarity, exact vs ANN search
 
 See the [docs index](docs/README.md) for all chapters.
 
@@ -151,7 +160,7 @@ See the [docs index](docs/README.md) for all chapters.
 - [x] 3. Shot detection and keyframes
 - [x] 4. Speech to text
 - [x] 5. Frame captioning with a vision-language model
-- [ ] 6. Embeddings and vector search
+- [x] 6. Embeddings and vector search
 - [ ] 7. Search, answering and a web UI (first end-to-end demo)
 - [ ] 8. Looking again: zooming into frames and locating objects
 - [ ] 9. Verifying answers, or saying "can't tell"
@@ -174,7 +183,9 @@ src/frameseek/
 ├── shots.py         shot detection, keyframes, contact sheet
 ├── transcribe.py    YouTube captions or Whisper, word timestamps
 ├── caption.py       structured keyframe captions with a resumable cache
-└── models/vision.py vision model interface + Ollama backend
+├── index.py         LanceDB index: build and per-source search
+├── models/vision.py vision model interface + Ollama backend
+└── models/embed.py  multilingual-e5 text and SigLIP2 image embedders
 ```
 
 ## License

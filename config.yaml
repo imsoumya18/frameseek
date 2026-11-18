@@ -35,3 +35,9 @@ caption:
   model: qwen3-vl:4b-instruct   # ~1.9x faster than the 8B per frame, same summary on our test frame; empty = vision.model
   max_image_side: 1024    # Ollama resizes every image to its own size: smaller saves nothing, loses detail
   num_predict: 300        # hard cap on output tokens per frame
+
+embed:
+  text_model: intfloat/multilingual-e5-small      # questions vs captions and speech; e5-base tested: no better
+  image_model: google/siglip2-base-patch16-224    # questions vs frame pixels (multilingual)
+  speech_chunk_s: 15.0    # transcript lines merged into ~15 s chunks before embedding
+  batch_size: 16

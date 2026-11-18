@@ -11,7 +11,7 @@ that implements them, so you can read along with the source.
 | 3 | [Shot detection](03-shot-detection.md) | `shots.py` |
 | 4 | [Speech to text](04-speech-to-text.md) | `transcribe.py` |
 | 5 | [Vision-language models](05-vision-language-models.md) | `caption.py`, `models/vision.py` |
-| 6 | Embeddings and vector search | |
+| 6 | [Embeddings and vector search](06-embeddings-and-search.md) | `index.py`, `models/embed.py` |
 | 7 | Retrieval, answering and UI | |
 | 8 | Look again and grounding | |
 | 9 | Verify or abstain | |

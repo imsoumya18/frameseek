@@ -166,6 +166,9 @@ def _load_whisper(name: str, cfg: TranscribeConfig, device_pref: str, on_progres
     """Load each model once per process and reuse it."""
     from faster_whisper import WhisperModel
 
+    from frameseek.hf import quiet_hf
+    quiet_hf()
+
     device = ctranslate2_device(cfg.device if cfg.device != "auto" else device_pref)
     key = (name, device)
     if key not in _MODELS:

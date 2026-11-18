@@ -17,7 +17,9 @@ from rich.progress import (
     DownloadColumn,
     MofNCompleteColumn,
     Progress,
+    SpinnerColumn,
     TextColumn,
+    TimeElapsedColumn,
     TimeRemainingColumn,
     TransferSpeedColumn,
 )
@@ -71,8 +73,8 @@ def doctor() -> None:
         import torch  # noqa: F401
         note = ""
     except ImportError:
-        note = " [dim](PyTorch not installed yet; arrives with SigLIP2 in Section 6)[/dim]"
-    log.print(f"  PyTorch models : {torch_dev}{note}")
+        note = " [dim](PyTorch not installed: run uv sync)[/dim]"
+    log.print(f"  PyTorch models : {torch_dev}{note} [dim](SigLIP2, e5 embeddings)[/dim]")
     wd = cfg.transcribe.device if cfg.transcribe.device != "auto" else cfg.device
     log.print(f"  Whisper        : {ctranslate2_device(wd)} "
               "[dim](CTranslate2: CUDA or CPU; MPS is experimental, opt in with transcribe.device: mps)[/dim]")
@@ -486,6 +488,163 @@ def bench_vision(
                       f"{t.decode_s:.1f}s", f"{t.prefill_s + t.decode_s:.1f}s", seen)
     log.print(table)
     log.print("[dim]Rows run one after another: on a fanless laptop, later rows can slow down as it heats up.[/dim]")
+
+
+# ---------- index and search ----------
+
+def _embedders(cfg):
+    from frameseek.models.embed import ImageEmbedder, TextEmbedder
+    device = pick_device(cfg.device)
+    return (TextEmbedder(cfg.embed.text_model, device, cfg.embed.batch_size),
+            ImageEmbedder(cfg.embed.image_model, device, cfg.embed.batch_size), device)
+
+
+def _load_inputs(cfg, url):
+    """Captions and transcript must already exist: they are slow, so index never runs them silently."""
+    from frameseek.caption import cache_key, load_done
+    from frameseek.transcribe import load_transcript
+
+    meta, _, _ = _ingest_with_progress(cfg, url)
+    shot_list, _, _ = _shots_with_progress(cfg, meta)
+    video_dir = cfg.data_dir / meta.id
+
+    model_name = cfg.caption.model or cfg.vision.model
+    done = load_done(video_dir / "captions.jsonl", cache_key(model_name, cfg.caption.max_image_side))
+    n_kf = sum(len(s.keyframes) for s in shot_list)
+    if not done:
+        log.print(f"[red]error:[/red] no captions yet. Run: frameseek caption {meta.id}")
+        raise typer.Exit(code=1)
+    if len(done) < n_kf:
+        log.print(f"[yellow]warning:[/yellow] only {len(done)} of {n_kf} keyframes are captioned; "
+                  f"indexing those. Run `frameseek caption {meta.id}` to finish.")
+
+    transcript = load_transcript(video_dir, cfg.transcribe)
+    if transcript is None:
+        log.print(f"[yellow]warning:[/yellow] no transcript with current settings; indexing frames only. "
+                  f"Run: frameseek transcribe {meta.id}")
+    return meta, video_dir, list(done.values()), transcript
+
+
+@app.command()
+def index(
+    url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
+    force: bool = typer.Option(False, "--force", help="Rebuild even if cached"),
+) -> None:
+    """Embed captions, frames and speech into a searchable vector index."""
+    from frameseek.index import build_index
+
+    cfg = load_config()
+    meta, video_dir, records, transcript = _load_inputs(cfg, url)
+    text_emb, image_emb, device = _embedders(cfg)
+
+    from frameseek.hf import APPROX_SIZE
+
+    start = time.perf_counter()
+    progress = Progress(
+        SpinnerColumn(), TextColumn("{task.description}"), BarColumn(),
+        MofNCompleteColumn(), TimeElapsedColumn(),
+        console=log, transient=True,
+    )
+    task: list[int] = []
+    loading: list[int] = []   # the current download/load line, removed when it finishes
+
+    def stamp(msg: str) -> None:
+        progress.console.print(f"[dim][{time.perf_counter() - start:5.1f}s] {msg}[/dim]")
+
+    def done_loading() -> None:
+        while loading:
+            progress.remove_task(loading.pop())
+
+    def on_progress(ev: dict) -> None:
+        st = ev["stage"]
+        if st != "load":
+            done_loading()
+        if st == "load":
+            done_loading()
+            name = ev["model"]
+            if ev["download"]:
+                label = f"Downloading {name} ({APPROX_SIZE.get(name, 'size unknown')}, first run only)"
+            else:
+                label = f"Loading {name} on {device}"
+            stamp(label)
+            loading.append(progress.add_task(label, total=None))   # spinner + elapsed time
+        elif st == "embed_captions":
+            stamp(f"Embedding {ev['count']} captions (e5)")
+        elif st == "embed_frames":
+            if not task:
+                task.append(progress.add_task("Embedding frames", total=ev["total"]))
+            progress.update(task[0], completed=ev["done"])
+        elif st == "embed_speech":
+            stamp(f"Embedding {ev['count']} speech chunks (e5)")
+        elif st == "write":
+            stamp("Writing LanceDB tables")
+
+    with progress:
+        stats, cached = build_index(video_dir, records, transcript, text_emb, image_emb,
+                                    cfg.embed, force=force, on_progress=on_progress)
+    elapsed = time.perf_counter() - start
+
+    if cached:
+        log.print(f"[green]Cached[/green] - index already built from these inputs ({elapsed:.1f}s)")
+    else:
+        log.print(f"[green]Indexed[/green] in {elapsed:.1f}s")
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_column(style="dim")
+    table.add_column()
+    table.add_row("frames", f"{stats.frames} (caption vector + image vector each)")
+    table.add_row("speech", f"{stats.speech_chunks} chunks of ~{cfg.embed.speech_chunk_s:g}s")
+    table.add_row("models", f"{cfg.embed.text_model}, {cfg.embed.image_model} on {device}")
+    table.add_row("saved to", str(video_dir / "index.lance"))
+    log.print(table)
+
+
+@app.command()
+def search(
+    url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
+    question: str = typer.Argument(..., help='e.g. "woman in a red saree" or "লাল শাড়ি"'),
+    k: int = typer.Option(5, "--k", help="Results per source"),
+) -> None:
+    """Raw retrieval from each source (captions, frames, speech), before fusion and answering."""
+    from frameseek.index import search as run_search
+    from frameseek.ingest import parse_video_id
+
+    cfg = load_config()
+    video_dir = cfg.data_dir / parse_video_id(url)
+    if not (video_dir / "index.lance").exists():
+        log.print(f"[red]error:[/red] no index yet. Run: frameseek index {url}")
+        raise typer.Exit(code=1)
+
+    text_emb, image_emb, device = _embedders(cfg)
+    for emb in (text_emb, image_emb):
+        verb = "Loading" if emb.is_downloaded() else "Downloading (first run only)"
+        with log.status(f"{verb} {emb.name} on {device}..."):
+            emb.load()
+    start = time.perf_counter()
+    results = run_search(video_dir, question, text_emb, image_emb, k=k)
+    log.print(f"[dim]searched in {(time.perf_counter() - start) * 1000:.0f} ms[/dim]")
+
+    sections = [
+        ("captions", "Captions (question text vs caption text, e5)"),
+        ("frames", "Frames (question text vs pixels, SigLIP2)"),
+        ("speech", "Speech (question text vs what was said, e5)"),
+    ]
+    for key, title in sections:
+        table = Table(title=title, title_justify="left", show_edge=False, pad_edge=False)
+        table.add_column("score", justify="right")
+        table.add_column("time", justify="right")
+        table.add_column("content")
+        for r in results[key]:
+            when = _fmt_t(r["start"]) if key == "speech" else _fmt_t(r["t"])
+            content = escape(r["text"] if key == "speech" else r["summary"])
+            if key != "speech":
+                content += f" [dim]({r['file']})[/dim]"
+            table.add_row(f"{r['score']:.3f}", when, content)
+        if not results[key]:
+            table.add_row("", "", "[dim](no data)[/dim]")
+        log.print(table)
+        log.print()
+    log.print("[dim]Scores are only comparable within one table: each model has its own scale "
+              "(SigLIP2 ~0.1-0.2, e5 ~0.7-0.9). Section 7 combines them by rank.[/dim]")
 
 
 # ---------- describe ----------
