@@ -151,6 +151,18 @@ class OllamaVision:
         running = {m.get("name") or m.get("model") for m in resp.json().get("models", [])}
         return self.cfg.model in running
 
+    def unload(self) -> None:
+        """Ask Ollama to free this model's memory now instead of after keep_alive.
+
+        On a 16 GB machine the 4B (captioning) and the 8B (answering) both kept
+        for 30 minutes is ~10 GB of weights, plus the KV cache, the embedders and
+        everything else running. Best effort: errors are ignored.
+        """
+        try:
+            self.client.post("/api/generate", json={"model": self.cfg.model, "keep_alive": 0})
+        except httpx.HTTPError:
+            pass
+
     def residency(self) -> tuple[int, int] | None:
         """(total_bytes, bytes_in_gpu_memory) for the loaded model, or None if not loaded.
 

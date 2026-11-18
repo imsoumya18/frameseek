@@ -83,3 +83,15 @@ def test_residency_reports_gpu_share() -> None:
 
 def test_residency_none_when_not_loaded() -> None:
     assert _ps([]).residency() is None
+
+
+def test_unload_sends_keep_alive_zero() -> None:
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(path=request.url.path, body=json.loads(request.content))
+        return httpx.Response(200, json={"done": True})
+
+    cfg = VisionConfig(model="qwen3-vl:4b-instruct")
+    OllamaVision(cfg, client=httpx.Client(base_url=cfg.host, transport=httpx.MockTransport(handler))).unload()
+    assert seen == {"path": "/api/generate", "body": {"model": "qwen3-vl:4b-instruct", "keep_alive": 0}}

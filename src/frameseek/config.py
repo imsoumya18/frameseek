@@ -70,7 +70,12 @@ class EmbedConfig:
 @dataclass
 class AnswerConfig:
     model: str = ""             # answering model; empty = vision.model (the 8B)
-    top_n: int = 3              # moments (and frames) shown to the answering model
+    mode: str = "look"          # look: one frame at a time + zoom (Section 8); compare: top_n frames at once (Section 7)
+    top_n: int = 3              # compare mode: moments (and frames) shown together
+    look_n: int = 6             # look mode: most moments checked before giving up
+    zoom_margin: float = 0.3    # look mode: crop margin, as a fraction of the box's size on each side
+    zoom_min_px: int = 160      # look mode: smallest crop side in original pixels
+    zoom_skip_area: float = 0.5 # look mode: boxes bigger than this fraction of the frame aren't zoomed
     num_predict: int = 300
 
 

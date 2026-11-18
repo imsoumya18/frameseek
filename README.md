@@ -44,7 +44,8 @@ Expensive work happens once at indexing time, so answering stays fast.
 | Speech | Word-timestamped transcript: YouTube captions if their language checks out, else local Whisper | Done |
 | Captions | A local vision-language model describes each keyframe as structured JSON (objects, colours, people, on-screen text) | Done |
 | Index | Caption, frame-pixel and speech embeddings in a local vector database (LanceDB) | Done |
-| Search + answer | Fuses the three rankings into moments; a vision model reads the top frames and answers with the moment and evidence | Done (v0) |
+| Search + answer | Fuses the three sources into ranked moments; a vision model reads the top frames and answers with the moment and evidence | Done |
+| Look again | Checks moments one at a time, asks the model where the answer is (a box), zooms into it and confirms | Done |
 
 ## Try it
 
@@ -91,6 +92,7 @@ uv run frameseek bench-vision data/<video_id>/keyframes/kf_0010_00.jpg
 uv run frameseek index "https://youtu.be/<video_id>"
 
 # Ask a question: answer, moment, evidence and a timestamped link
+# (--mode look: one frame at a time with zoom, the default; --mode compare: top 3 at once)
 uv run frameseek ask "https://youtu.be/<video_id>" "what colour is the guitarist's shirt?"
 
 # Score retrieval on a hand-checked question set (evals/<video_id>.yaml); --answer runs the model too
@@ -133,7 +135,8 @@ On a MacBook Air (16 GB), with a 4.8-minute music video:
 | Captioning 88 keyframes | Qwen3-VL 4B: 18.2 s per frame, 27 min total (about 1.9x faster than the 8B; slower than benchmarked due to thermal throttling) |
 | Search, 5 test questions | Every question answered by at least one of captions, frame pixels or speech; each source won at least one the others missed (~1 s per query including model warm-up) |
 | Retrieval, 21 test questions | Right moment in the top 3 for 18/21 (z-score fusion), up from 15/21 with rank fusion; lyric questions 2/4 |
-| Answering, 21 test questions | 8B picked a right moment for 16-17/21 across two prompt versions; ~15 answers fully right by eye; one prompt change turned a refusal into an invented quote (see Chapter 7) |
+| Answering, 21 test questions | 8B picked a right moment for 18/21 (every retrieval hit); one invented quote remains, the first test case for verification (Chapter 9) |
+| Look again, 21 test questions | Right moment 19/21 (compare mode: 18/21), including the pink cap ranked 4th; mean 50 s per question |
 | Answering, 3 test questions (v0) | 1 right, 1 correct refusal, 1 wrong (small text unreadable); ~65 s per question with the 8B reading 3 frames |
 | Speech, Bengali song | YouTube captions came out in Hindi (wrong uploader tag). Whisper `small` detects Bengali, `large-v3-turbo` transcribes it in Bengali script (~144 s) |
 
@@ -170,6 +173,7 @@ the order they were built, with diagrams and self-check questions:
 - [Vision-language models](docs/05-vision-language-models.md): patches to tokens, structured captions, constrained decoding
 - [Embeddings and search](docs/06-embeddings-and-search.md): contrastive learning, cosine similarity, exact vs ANN search
 - [Retrieval and answering](docs/07-retrieval-and-answering.md): z-score fusion (and why rank fusion failed), retrieve-then-rerank, answering from evidence, measuring retrieval
+- [Looking again](docs/08-look-again.md): token budgets, grounding boxes, crop and zoom, a one-frame-at-a-time loop with early stop
 
 See the [docs index](docs/README.md) for all chapters.
 
@@ -205,6 +209,8 @@ src/frameseek/
 ├── caption.py       structured keyframe captions with a resumable cache
 ├── index.py         LanceDB index: build and per-source search
 ├── answer.py        z-score fusion, moments, answering from evidence
+├── look.py          look again: one moment at a time, zoom, confirm
+├── zoom.py          model boxes (0-1000) to crops of the original keyframe
 ├── evaluate.py      scoring retrieval against a question set
 ├── pipeline.py      prepare() and Asker: the flow shared by CLI and UI
 ├── app.py           Gradio web app

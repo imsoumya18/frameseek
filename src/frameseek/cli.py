@@ -414,6 +414,8 @@ def caption(
         result = caption_keyframes(video_dir, shot_list, model, model_name, cfg.caption,
                                    force=force, on_progress=on_progress)
     elapsed = time.perf_counter() - start
+    if model_name != (cfg.answer.model or cfg.vision.model) and result.newly_done:
+        model.unload()   # free the captioning model; the answering model is a different one
 
     timed = [r["timing"] for r in result.records if "timing" in r]
     per_frame = [t["prefill_s"] + t["decode_s"] for t in timed]
@@ -653,6 +655,7 @@ def search(
 def ask(
     url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
     question: str = typer.Argument(..., help='e.g. "what colour is the guitarist\'s shirt?"'),
+    mode: str = typer.Option(None, "--mode", help="look (one frame at a time + zoom) or compare (top 3 together); default from config"),
 ) -> None:
     """Answer a question about a prepared video, with the moment and evidence."""
     from frameseek.answer import describe_parts, fmt_time
@@ -660,6 +663,7 @@ def ask(
     from frameseek.pipeline import Asker
 
     cfg = load_config()
+    mode = mode or cfg.answer.mode
     meta, video_dir, records, transcript = _load_inputs(cfg, url)
     asker = Asker(cfg)
     for emb in (asker.text, asker.image):
@@ -669,22 +673,39 @@ def ask(
     with log.status("Checking the search index..."):
         build_index(video_dir, records, transcript, asker.text, asker.image, cfg.embed)
 
-    n = cfg.answer.top_n
-    with log.status(f"Searching, then {asker.model_name} reads the top {n} moments "
-                    f"(~{n * 1240} image tokens)..."):
-        res = asker.ask(video_dir, question)
-    a = res.answer
+    if mode == "look":
+        log.print(f"[bold]Looking[/bold] at up to {cfg.answer.look_n} moments, best first, with {asker.model_name}")
+        status = log.status("Searching...")
+        status.start()
 
-    table = Table(title="Candidate moments shown to the model", title_justify="left",
-                  show_edge=False, pad_edge=False)
-    for col, just in (("#", "right"), ("time", "right"), ("z-scores", "left"), ("caption", "left")):
-        table.add_column(col, justify=just)
-    for i, m in enumerate(a.candidates, start=1):
-        found = describe_parts(m)
-        mark = " [green]<- chosen[/green]" if a.moment is m else ""
-        table.add_row(str(i), fmt_time(m.t), found, escape(m.summary) + mark)
-    log.print(table)
-    log.print()
+        def show(step) -> None:
+            mark = "[green]yes[/green]" if step.present else "[red]no[/red]"
+            what = f"{step.kind} #{step.rank} {fmt_time(step.moment.t)} {step.moment.file[:-4]}"
+            extra = f" [dim]crop {step.crop.name}[/dim]" if step.crop else ""
+            secs = f"{step.timing.total_s:.0f}s" if step.timing else ""
+            log.print(f"  {what:32} {mark}  {escape(step.seen[:70])}{extra} [dim]{secs}[/dim]")
+            status.update(f"{'Zooming' if step.kind == 'look' and step.present else 'Looking'}...")
+
+        try:
+            res = asker.ask(video_dir, question, mode, on_step=show)
+        finally:
+            status.stop()
+        log.print()
+    else:
+        n = cfg.answer.top_n
+        with log.status(f"Searching, then {asker.model_name} reads the top {n} moments "
+                        f"(~{n * 1240} image tokens)..."):
+            res = asker.ask(video_dir, question, mode)
+        table = Table(title="Candidate moments shown to the model", title_justify="left",
+                      show_edge=False, pad_edge=False)
+        for col, just in (("#", "right"), ("time", "right"), ("z-scores", "left"), ("caption", "left")):
+            table.add_column(col, justify=just)
+        for i, m in enumerate(res.answer.candidates, start=1):
+            mark = " [green]<- chosen[/green]" if res.answer.moment is m else ""
+            table.add_row(str(i), fmt_time(m.t), describe_parts(m), escape(m.summary) + mark)
+        log.print(table)
+        log.print()
+    a = res.answer
 
     colour = {"high": "green", "medium": "yellow", "low": "red"}.get(a.confidence, "white")
     log.print(f"[bold]Answer[/bold] [{colour}]({a.confidence} confidence)[/{colour}]")
@@ -695,9 +716,12 @@ def ask(
         log.print(f"[dim]At {fmt_time(a.moment.t)}: https://youtu.be/{meta.id}?t={int(a.moment.t)}  "
                   f"(frame {a.moment.file})[/dim]")
     else:
-        log.print("[dim]The model found no moment that answers this.[/dim]")
+        log.print("[dim]No moment answers this.[/dim]")
+    if a.crop:
+        log.print(f"[dim]Read from the zoomed crop: {a.crop}[/dim]")
     t = a.timing
-    log.print(f"[dim]search {res.search_ms:.0f} ms; answer: read {t.prefill_tokens} tokens in "
+    calls = f"{len(a.steps)} model calls, " if a.steps else ""
+    log.print(f"[dim]search {res.search_ms:.0f} ms; {calls}read {t.prefill_tokens} tokens in "
               f"{t.prefill_s:.1f}s, wrote {t.decode_tokens} in {t.decode_s:.1f}s; total {res.total_s:.1f}s[/dim]")
 
 
@@ -706,10 +730,11 @@ def eval_cmd(
     url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
     file: Path = typer.Option(None, "--file", help="Question set; default evals/<video_id>.yaml"),
     answer: bool = typer.Option(False, "--answer", help="Also run the answering model on every question (slow)"),
+    mode: str = typer.Option(None, "--mode", help="look or compare; default from config"),
 ) -> None:
     """Score retrieval (and optionally answers) against a hand-checked question set."""
-    from frameseek.answer import answer_question, describe_parts, fmt_time, fuse
-    from frameseek.evaluate import first_hit, is_hit, load_eval, summarise
+    from frameseek.answer import describe_parts, fmt_time, fuse
+    from frameseek.evaluate import first_hit, is_hit, load_eval, summarise, text_ok
     from frameseek.models.vision import OllamaError
     from frameseek.index import build_index, score_all
     from frameseek.pipeline import Asker
@@ -735,7 +760,8 @@ def eval_cmd(
         table.add_column(col)
     if answer:
         table.add_column("answer")
-    ranks, chose_right, abstained = [], 0, 0
+    mode = mode or cfg.answer.mode
+    ranks, chose_right, abstained, seconds, calls, texts = [], 0, 0, [], [], []
     for it in items:
         frames, speech, scores = score_all(video_dir, it.q, asker.text, asker.image)
         moments = fuse(frames, speech, scores)
@@ -746,8 +772,10 @@ def eval_cmd(
                f"{fmt_time(top.t)} {top.file[:-4]} ({describe_parts(top)})" if top else ""]
         if answer:
             try:
-                with log.status(f"Answering: {it.q}"):
-                    a = answer_question(it.q, moments, asker.vision, video_dir / "keyframes", cfg.answer)
+                with log.status(f"Answering ({mode}): {it.q}"):
+                    a = asker.answer(video_dir, it.q, moments, mode)
+                seconds.append(a.timing.total_s)
+                calls.append(len(a.steps) or 1)
             except OllamaError as e:   # one failed question shouldn't end a 20-minute run
                 row.append(f"[red]error[/red]: {escape(str(e)[:70])}")
                 table.add_row(*row)
@@ -760,15 +788,24 @@ def eval_cmd(
                 verdict = "[green]right moment[/green]"
             else:
                 verdict = "[red]wrong moment[/red]"
-            row.append(f"{verdict}: {escape(a.text[:70])}")
+            ok = text_ok(a.text, it)
+            if ok is not None:
+                texts.append(ok)
+                verdict += " [green]text ok[/green]" if ok else f" [red]text should include {escape(', '.join(it.contains))}[/red]"
+            row.append(f"{verdict}: {escape(a.text[:70])}" + (f" [dim]({len(a.steps)} calls)[/dim]" if a.steps else ""))
         table.add_row(*row)
     log.print(table)
     s = summarise(items, ranks, n)
     kinds = "  ".join(f"{k} {ok}/{tot}" for k, (ok, tot) in s.by_kind.items())
     log.print(f"\n[bold]hit@1 {s.hit1}/{s.n}   hit@{n} {s.hit_top}/{s.n}   MRR {s.mrr:.2f}[/bold]   [dim]{kinds}[/dim]")
     if answer:
-        log.print(f"[bold]answering model picked the right moment {chose_right}/{s.n}[/bold], "
+        log.print(f"[bold]{mode}: answering model picked the right moment {chose_right}/{s.n}[/bold], "
                   f"said none answers it {abstained}/{s.n}  [dim](check the answer text by eye)[/dim]")
+        if texts:
+            log.print(f"[bold]exact answer text right {sum(texts)}/{len(texts)}[/bold] [dim](questions with `contains`)[/dim]")
+        if seconds:
+            log.print(f"[dim]model time per question: mean {sum(seconds) / len(seconds):.0f}s, "
+                      f"max {max(seconds):.0f}s; calls per question: mean {sum(calls) / len(calls):.1f}[/dim]")
 
 
 @app.command()

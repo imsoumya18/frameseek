@@ -167,6 +167,8 @@ class Answer:
     evidence: str
     timing: Timing
     candidates: list[Moment]
+    steps: list = field(default_factory=list)   # look-again calls (look.Step), empty in compare mode
+    crop: Path | None = None                    # the zoomed crop the answer was read from
 
 
 def answer_question(

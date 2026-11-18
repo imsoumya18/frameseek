@@ -2,7 +2,8 @@
 
 prepare(url)  indexing: ingest -> shots -> transcribe -> caption -> index.
               Every step is cached, so a prepared video returns in seconds.
-Asker.ask()   asking: search -> fuse into moments -> answer from the frames.
+Asker.ask()   asking: search -> fuse into moments -> answer, either by looking at
+              moments one at a time with zoom (look) or at the top few together (compare).
               Models stay loaded between questions.
 """
 
@@ -18,6 +19,7 @@ from frameseek.caption import caption_keyframes
 from frameseek.config import Config
 from frameseek.devices import pick_device
 from frameseek.index import build_index, score_all
+from frameseek.look import StepFn, look_again
 from frameseek.ingest import ingest, require_tools
 from frameseek.models.embed import ImageEmbedder, TextEmbedder
 from frameseek.models.vision import build_vision_model
@@ -55,6 +57,8 @@ def prepare(url: str, cfg: Config, on_status: StatusFn = lambda _: None) -> Prep
         video_dir, shots, vm, cap_model, cfg.caption,
         on_progress=lambda ev: on_status(f"Captioning keyframes: {ev['done']}/{ev['total']} new"),
     )
+    if cap_model != (cfg.answer.model or cfg.vision.model) and result.newly_done:
+        vm.unload()   # don't keep the 4B in memory next to the 8B that answers questions
 
     on_status("Building the search index")
     device = pick_device(cfg.device)
@@ -88,9 +92,21 @@ class Asker:
         frames, speech, scores = score_all(video_dir, question, self.text, self.image)
         return fuse(frames, speech, scores)
 
-    def ask(self, video_dir: Path, question: str) -> AskResult:
+    def answer(self, video_dir: Path, question: str, moments: list,
+               mode: str | None = None, on_step: StepFn | None = None) -> Answer:
+        """Answer from ranked moments with the configured mode (or `mode` to override)."""
+        mode = mode or self.cfg.answer.mode
+        if mode == "look":
+            return look_again(question, moments, self.vision, video_dir / "keyframes", video_dir / "crops",
+                              self.cfg.answer, self.cfg.vision.max_image_side, on_step)
+        if mode == "compare":
+            return answer_question(question, moments, self.vision, video_dir / "keyframes", self.cfg.answer)
+        raise ValueError(f"answer.mode must be 'look' or 'compare', not {mode!r}")
+
+    def ask(self, video_dir: Path, question: str,
+            mode: str | None = None, on_step: StepFn | None = None) -> AskResult:
         start = time.perf_counter()
         moments = self.moments(video_dir, question)
         search_ms = (time.perf_counter() - start) * 1000
-        ans = answer_question(question, moments, self.vision, video_dir / "keyframes", self.cfg.answer)
+        ans = self.answer(video_dir, question, moments, mode, on_step)
         return AskResult(ans, search_ms, time.perf_counter() - start)

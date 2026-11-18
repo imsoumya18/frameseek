@@ -2,10 +2,11 @@
 # Every answer was checked by looking at the keyframes and the transcript.
 #   frames: keyframes that show the answer (any one in the top 3 counts as a hit)
 #   spans:  [start, end] seconds where the answer is sung or said
+#   contains: strings the answer text must include (exact on-screen text), checked with --answer
 video: nRWZBq2hcls
 questions:
   - {q: "guy in a pink cap", kind: visual, frames: [kf_0012_00, kf_0014_00, kf_0017_00, kf_0019_00, kf_0022_00, kf_0024_00, kf_0024_01]}
-  - {q: "what is written on the striped t-shirt?", kind: text, frames: [kf_0019_00]}
+  - {q: "what is written on the striped t-shirt?", kind: text, frames: [kf_0019_00, kf_0014_00], contains: [あなたの右目に]}
   - {q: "দুর্গা প্রতিমা কোথায় দেখা যায়?", kind: visual-bn, frames: [kf_0002_00, kf_0021_00, kf_0026_00, kf_0081_00]}
   - {q: "where is the Durga idol?", kind: visual, frames: [kf_0002_00, kf_0021_00, kf_0026_00, kf_0081_00]}
   - {q: "man playing guitar", kind: visual, frames: [kf_0004_00, kf_0009_00, kf_0011_00, kf_0015_00, kf_0023_00, kf_0033_00]}
@@ -14,8 +15,8 @@ questions:
   - {q: "man pushing a cart in a narrow lane", kind: visual, frames: [kf_0043_00]}
   - {q: "woman sitting in a rickshaw", kind: visual, frames: [kf_0044_00]}
   - {q: "group of friends sitting on red steps", kind: visual, frames: [kf_0027_00, kf_0035_00]}
-  - {q: "what is the name in the opening title?", kind: text, frames: [kf_0000_00]}
-  - {q: "Emperor vs Sarat Chandra poster", kind: text, frames: [kf_0066_00, kf_0068_00, kf_0072_00, kf_0080_00, kf_0082_01]}
+  - {q: "what is the name in the opening title?", kind: text, frames: [kf_0000_00], contains: [সৃজিত]}
+  - {q: "Emperor vs Sarat Chandra poster", kind: text, frames: [kf_0066_00, kf_0068_00, kf_0072_00, kf_0080_00, kf_0082_01], contains: [Sarat Chandra]}
   - {q: "end credits", kind: text, frames: [kf_0082_02]}
   - {q: "close-up of the goddess face", kind: visual, frames: [kf_0081_00, kf_0021_00]}
   - {q: "man in a grey t-shirt", kind: visual, frames: [kf_0006_00, kf_0010_00, kf_0013_00]}

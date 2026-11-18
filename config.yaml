@@ -46,5 +46,11 @@ embed:
 
 answer:
   model: ""               # answering model; empty = vision.model (8B). The 4B is ~2x faster, weaker judge
-  top_n: 3                # moments shown to the answering model (~1,240 input tokens per frame)
+  mode: look              # look: check moments one at a time, zoom into the first hit (Section 8)
+                          # compare: show the top_n frames together in one call (Section 7)
+  top_n: 3                # compare mode: moments shown together (~1,240 input tokens per frame)
+  look_n: 6               # look mode: most moments checked before answering "not found"
+  zoom_margin: 0.3        # look mode: margin around the model's box, as a fraction of its size per side
+  zoom_min_px: 160        # look mode: smallest crop side in original pixels (smaller is mostly blur)
+  zoom_skip_area: 0.5     # look mode: a box covering more than this share of the frame isn't zoomed
   num_predict: 300

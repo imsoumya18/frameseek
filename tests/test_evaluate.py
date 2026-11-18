@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from frameseek.answer import Moment
-from frameseek.evaluate import Item, first_hit, load_eval, summarise
+from frameseek.evaluate import Item, first_hit, load_eval, summarise, text_ok
 
 SPEECH = [{"start": 55.6, "end": 77.0, "text": "এসেছে ঢাক"}, {"start": 77.0, "end": 101.6, "text": "আমি তো প্রেমিক"}]
 
@@ -28,3 +28,10 @@ def test_shipped_question_set_loads() -> None:
     video, items = load_eval(Path(__file__).parents[1] / "evals" / "nRWZBq2hcls.yaml")
     assert video == "nRWZBq2hcls" and len(items) == 21
     assert all(it.frames or it.spans for it in items)
+
+
+def test_text_check_catches_a_one_sign_misread() -> None:
+    title = Item("name in the opening title?", "text", {"kf_0000_00"}, [], ["সৃজিত"])
+    assert text_ok("The name is সৃজিত মুখার্জি.", title) is True
+    assert text_ok("The name is সুজিত মুখার্জি.", title) is False   # what the 8B wrote in Section 7
+    assert text_ok("anything", Item("q", "visual", set(), [])) is None

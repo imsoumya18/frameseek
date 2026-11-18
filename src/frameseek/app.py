@@ -79,13 +79,17 @@ def ask_question(url: str, question: str):
     a = res.answer
 
     t = a.timing
+    looked = "".join(f"  \n{s.kind} {fmt_time(s.moment.t)}: {'yes' if s.present else 'no'} · {s.seen}"
+                     for s in a.steps)
     md = (f"### {a.text}\n\n**Confidence:** {a.confidence}"
           + (f"  \n**Evidence:** {a.evidence}" if a.evidence else "")
           + (f"  \n**Moment:** {fmt_time(a.moment.t)}" if a.moment else "  \n*No moment answers this.*")
-          + f"\n\n<sub>search {res.search_ms:.0f} ms · read {t.prefill_tokens} tokens in "
+          + (f"\n\n**Looked at:**{looked}" if looked else "")
+          + f"\n\n<sub>search {res.search_ms:.0f} ms · {len(a.steps) or 1} model calls · read {t.prefill_tokens} tokens in "
             f"{t.prefill_s:.1f}s · wrote {t.decode_tokens} in {t.decode_s:.1f}s · total {res.total_s:.1f}s</sub>")
     start = int(a.moment.t) if a.moment else int(a.candidates[0].t) if a.candidates else 0
-    evidence = str(video_dir / "keyframes" / a.moment.file) if a.moment else None
+    # The zoomed crop when there is one: that's what the answer was read from.
+    evidence = str(a.crop) if a.crop else str(video_dir / "keyframes" / a.moment.file) if a.moment else None
     gallery = [(str(video_dir / "keyframes" / m.file),
                 f"{i}. {fmt_time(m.t)} · {describe_parts(m)}{' · chosen' if m is a.moment else ''}")
                for i, m in enumerate(a.candidates, start=1)]
@@ -110,8 +114,8 @@ def build():
                 answer = gr.Markdown()
                 player = gr.HTML()
             with gr.Column(scale=2):
-                evidence = gr.Image(label="Evidence frame", type="filepath")
-        candidates = gr.Gallery(label="Candidate moments the model was shown", columns=3, height=220)
+                evidence = gr.Image(label="Evidence (zoomed crop when there is one)", type="filepath")
+        candidates = gr.Gallery(label="Candidate moments, best first", columns=3, height=220)
 
         prep.click(prepare_video, inputs=url, outputs=status)
         go.click(ask_question, inputs=[url, q], outputs=[answer, player, evidence, candidates])

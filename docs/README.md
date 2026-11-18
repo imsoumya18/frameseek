@@ -13,7 +13,7 @@ that implements them, so you can read along with the source.
 | 5 | [Vision-language models](05-vision-language-models.md) | `caption.py`, `models/vision.py` |
 | 6 | [Embeddings and vector search](06-embeddings-and-search.md) | `index.py`, `models/embed.py` |
 | 7 | [Retrieval, answering and the UI](07-retrieval-and-answering.md) | `answer.py`, `pipeline.py`, `app.py` |
-| 8 | Look again and grounding | |
+| 8 | [Looking again: grounding, crop and zoom](08-look-again.md) | `look.py`, `zoom.py` |
 | 9 | Verify or abstain | |
 | 10 | Benchmark and evaluation | |
 | 11 | Indian scripts and languages | |
