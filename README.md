@@ -8,8 +8,8 @@ and get the answer with the moment and the frame as evidence.
 frameseek runs entirely on your own machine with open-source models, and is being
 built with Indian-language videos (Hindi, Bengali, Telugu and code-mixed speech) in mind.
 
-**Status:** work in progress. Download, shot detection, speech-to-text, frame captioning and
-vector search work today; answering is next. See the [roadmap](#roadmap).
+**Status:** work in progress. The first end-to-end version works: prepare a video, then ask
+questions in the terminal or a local web app. Next: looking closer at frames and verifying answers. See the [roadmap](#roadmap).
 
 ---
 
@@ -44,7 +44,16 @@ Expensive work happens once at indexing time, so answering stays fast.
 | Speech | Word-timestamped transcript: YouTube captions if their language checks out, else local Whisper | Done |
 | Captions | A local vision-language model describes each keyframe as structured JSON (objects, colours, people, on-screen text) | Done |
 | Index | Caption, frame-pixel and speech embeddings in a local vector database (LanceDB) | Done |
-| Search + answer | Finds candidate moments, looks again at those frames, answers with evidence | Next |
+| Search + answer | Fuses the three rankings into moments; a vision model reads the top frames and answers with the moment and evidence | Done (v0) |
+
+## Try it
+
+```bash
+uv run frameseek ui        # web app: paste a link, prepare, ask in English or Bengali
+```
+
+The answer comes with a YouTube player that starts at the moment it found, the
+evidence frame, and the other candidate moments the model looked at.
 
 ## Quickstart
 
@@ -81,6 +90,12 @@ uv run frameseek bench-vision data/<video_id>/keyframes/kf_0010_00.jpg
 # Embed captions, frame pixels and speech into a vector index
 uv run frameseek index "https://youtu.be/<video_id>"
 
+# Ask a question: answer, moment, evidence and a timestamped link
+uv run frameseek ask "https://youtu.be/<video_id>" "what colour is the guitarist's shirt?"
+
+# Score retrieval on a hand-checked question set (evals/<video_id>.yaml); --answer runs the model too
+uv run frameseek eval "https://youtu.be/<video_id>"
+
 # Raw retrieval from each source (before fusion and answering)
 uv run frameseek search "https://youtu.be/<video_id>" "woman in a red saree"
 
@@ -116,6 +131,10 @@ On a MacBook Air (16 GB), with a 4.8-minute music video:
 | Vision model, one frame | ~20 s warm (14.5 s reading the image, 6.1 s writing the answer) |
 | Vision model, image size | Ollama gives every frame ~1,200 tokens whatever size is sent (384 to 1024 px): image size is not a lever there |
 | Captioning 88 keyframes | Qwen3-VL 4B: 18.2 s per frame, 27 min total (about 1.9x faster than the 8B; slower than benchmarked due to thermal throttling) |
+| Search, 5 test questions | Every question answered by at least one of captions, frame pixels or speech; each source won at least one the others missed (~1 s per query including model warm-up) |
+| Retrieval, 21 test questions | Right moment in the top 3 for 18/21 (z-score fusion), up from 15/21 with rank fusion; lyric questions 2/4 |
+| Answering, 21 test questions | 8B picked a right moment for 16-17/21 across two prompt versions; ~15 answers fully right by eye; one prompt change turned a refusal into an invented quote (see Chapter 7) |
+| Answering, 3 test questions (v0) | 1 right, 1 correct refusal, 1 wrong (small text unreadable); ~65 s per question with the 8B reading 3 frames |
 | Speech, Bengali song | YouTube captions came out in Hindi (wrong uploader tag). Whisper `small` detects Bengali, `large-v3-turbo` transcribes it in Bengali script (~144 s) |
 
 The last row is why the next steps index frames at low resolution with short
@@ -150,6 +169,7 @@ the order they were built, with diagrams and self-check questions:
 - [Speech to text](docs/04-speech-to-text.md): spectrograms, encoder-decoder, word timestamps, hallucinations
 - [Vision-language models](docs/05-vision-language-models.md): patches to tokens, structured captions, constrained decoding
 - [Embeddings and search](docs/06-embeddings-and-search.md): contrastive learning, cosine similarity, exact vs ANN search
+- [Retrieval and answering](docs/07-retrieval-and-answering.md): z-score fusion (and why rank fusion failed), retrieve-then-rerank, answering from evidence, measuring retrieval
 
 See the [docs index](docs/README.md) for all chapters.
 
@@ -161,7 +181,7 @@ See the [docs index](docs/README.md) for all chapters.
 - [x] 4. Speech to text
 - [x] 5. Frame captioning with a vision-language model
 - [x] 6. Embeddings and vector search
-- [ ] 7. Search, answering and a web UI (first end-to-end demo)
+- [x] 7. Search, answering and a web UI (first end-to-end demo)
 - [ ] 8. Looking again: zooming into frames and locating objects
 - [ ] 9. Verifying answers, or saying "can't tell"
 - [ ] 10. Benchmark against transcript-only search and hosted models
@@ -184,6 +204,10 @@ src/frameseek/
 ├── transcribe.py    YouTube captions or Whisper, word timestamps
 ├── caption.py       structured keyframe captions with a resumable cache
 ├── index.py         LanceDB index: build and per-source search
+├── answer.py        z-score fusion, moments, answering from evidence
+├── evaluate.py      scoring retrieval against a question set
+├── pipeline.py      prepare() and Asker: the flow shared by CLI and UI
+├── app.py           Gradio web app
 ├── models/vision.py vision model interface + Ollama backend
 └── models/embed.py  multilingual-e5 text and SigLIP2 image embedders
 ```

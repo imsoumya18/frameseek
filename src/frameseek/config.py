@@ -24,6 +24,7 @@ class VisionConfig:
     max_image_side: int = 1024
     timeout_s: float = 180.0
     keep_alive: str = "30m"
+    num_ctx: int = 8192           # context window; Ollama's default 4096 is too small for 3 frames + text
 
 
 @dataclass
@@ -67,6 +68,13 @@ class EmbedConfig:
 
 
 @dataclass
+class AnswerConfig:
+    model: str = ""             # answering model; empty = vision.model (the 8B)
+    top_n: int = 3              # moments (and frames) shown to the answering model
+    num_predict: int = 300
+
+
+@dataclass
 class Config:
     data_dir: Path = Path("data")
     device: str = "auto"
@@ -76,6 +84,7 @@ class Config:
     transcribe: TranscribeConfig = field(default_factory=TranscribeConfig)
     caption: CaptionConfig = field(default_factory=CaptionConfig)
     embed: EmbedConfig = field(default_factory=EmbedConfig)
+    answer: AnswerConfig = field(default_factory=AnswerConfig)
 
 
 def _pick(cls: type, raw: dict[str, Any]) -> dict[str, Any]:
@@ -99,6 +108,7 @@ def load_config(path: str | Path | None = None) -> Config:
     transcribe_raw = raw.pop("transcribe", {}) or {}
     caption_raw = raw.pop("caption", {}) or {}
     embed_raw = raw.pop("embed", {}) or {}
+    answer_raw = raw.pop("answer", {}) or {}
     top = _pick(Config, raw)
     return Config(
         data_dir=Path(top.get("data_dir", "data")),
@@ -109,4 +119,5 @@ def load_config(path: str | Path | None = None) -> Config:
         transcribe=TranscribeConfig(**_pick(TranscribeConfig, transcribe_raw)),
         caption=CaptionConfig(**_pick(CaptionConfig, caption_raw)),
         embed=EmbedConfig(**_pick(EmbedConfig, embed_raw)),
+        answer=AnswerConfig(**_pick(AnswerConfig, answer_raw)),
     )

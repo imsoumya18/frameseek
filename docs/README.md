@@ -12,7 +12,7 @@ that implements them, so you can read along with the source.
 | 4 | [Speech to text](04-speech-to-text.md) | `transcribe.py` |
 | 5 | [Vision-language models](05-vision-language-models.md) | `caption.py`, `models/vision.py` |
 | 6 | [Embeddings and vector search](06-embeddings-and-search.md) | `index.py`, `models/embed.py` |
-| 7 | Retrieval, answering and UI | |
+| 7 | [Retrieval, answering and the UI](07-retrieval-and-answering.md) | `answer.py`, `pipeline.py`, `app.py` |
 | 8 | Look again and grounding | |
 | 9 | Verify or abstain | |
 | 10 | Benchmark and evaluation | |

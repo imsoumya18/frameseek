@@ -644,7 +644,140 @@ def search(
         log.print(table)
         log.print()
     log.print("[dim]Scores are only comparable within one table: each model has its own scale "
-              "(SigLIP2 ~0.1-0.2, e5 ~0.7-0.9). Section 7 combines them by rank.[/dim]")
+              "(SigLIP2 ~0.1-0.2, e5 ~0.7-0.9). ask combines them as z-scores.[/dim]")
+
+
+# ---------- ask and ui ----------
+
+@app.command()
+def ask(
+    url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
+    question: str = typer.Argument(..., help='e.g. "what colour is the guitarist\'s shirt?"'),
+) -> None:
+    """Answer a question about a prepared video, with the moment and evidence."""
+    from frameseek.answer import describe_parts, fmt_time
+    from frameseek.index import build_index
+    from frameseek.pipeline import Asker
+
+    cfg = load_config()
+    meta, video_dir, records, transcript = _load_inputs(cfg, url)
+    asker = Asker(cfg)
+    for emb in (asker.text, asker.image):
+        verb = "Loading" if emb.is_downloaded() else "Downloading (first run only)"
+        with log.status(f"{verb} {emb.name}..."):
+            emb.load()
+    with log.status("Checking the search index..."):
+        build_index(video_dir, records, transcript, asker.text, asker.image, cfg.embed)
+
+    n = cfg.answer.top_n
+    with log.status(f"Searching, then {asker.model_name} reads the top {n} moments "
+                    f"(~{n * 1240} image tokens)..."):
+        res = asker.ask(video_dir, question)
+    a = res.answer
+
+    table = Table(title="Candidate moments shown to the model", title_justify="left",
+                  show_edge=False, pad_edge=False)
+    for col, just in (("#", "right"), ("time", "right"), ("z-scores", "left"), ("caption", "left")):
+        table.add_column(col, justify=just)
+    for i, m in enumerate(a.candidates, start=1):
+        found = describe_parts(m)
+        mark = " [green]<- chosen[/green]" if a.moment is m else ""
+        table.add_row(str(i), fmt_time(m.t), found, escape(m.summary) + mark)
+    log.print(table)
+    log.print()
+
+    colour = {"high": "green", "medium": "yellow", "low": "red"}.get(a.confidence, "white")
+    log.print(f"[bold]Answer[/bold] [{colour}]({a.confidence} confidence)[/{colour}]")
+    print(a.text)
+    if a.evidence:
+        log.print(f"[dim]Evidence: {escape(a.evidence)}[/dim]")
+    if a.moment:
+        log.print(f"[dim]At {fmt_time(a.moment.t)}: https://youtu.be/{meta.id}?t={int(a.moment.t)}  "
+                  f"(frame {a.moment.file})[/dim]")
+    else:
+        log.print("[dim]The model found no moment that answers this.[/dim]")
+    t = a.timing
+    log.print(f"[dim]search {res.search_ms:.0f} ms; answer: read {t.prefill_tokens} tokens in "
+              f"{t.prefill_s:.1f}s, wrote {t.decode_tokens} in {t.decode_s:.1f}s; total {res.total_s:.1f}s[/dim]")
+
+
+@app.command("eval")
+def eval_cmd(
+    url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
+    file: Path = typer.Option(None, "--file", help="Question set; default evals/<video_id>.yaml"),
+    answer: bool = typer.Option(False, "--answer", help="Also run the answering model on every question (slow)"),
+) -> None:
+    """Score retrieval (and optionally answers) against a hand-checked question set."""
+    from frameseek.answer import answer_question, describe_parts, fmt_time, fuse
+    from frameseek.evaluate import first_hit, is_hit, load_eval, summarise
+    from frameseek.models.vision import OllamaError
+    from frameseek.index import build_index, score_all
+    from frameseek.pipeline import Asker
+
+    cfg = load_config()
+    meta, video_dir, records, transcript = _load_inputs(cfg, url)
+    path = file or Path("evals") / f"{meta.id}.yaml"
+    if not path.exists():
+        log.print(f"[red]No question set at {path}[/red]")
+        raise typer.Exit(1)
+    _, items = load_eval(path)
+    asker = Asker(cfg)
+    for emb in (asker.text, asker.image):
+        with log.status(f"Loading {emb.name}..."):
+            emb.load()
+    with log.status("Checking the search index..."):
+        build_index(video_dir, records, transcript, asker.text, asker.image, cfg.embed)
+
+    n = cfg.answer.top_n
+    table = Table(title=f"Retrieval on {len(items)} questions (hit = right moment in the top {n})",
+                  title_justify="left", show_edge=False, pad_edge=False)
+    for col in ("", "rank", "kind", "question", "top moment"):
+        table.add_column(col)
+    if answer:
+        table.add_column("answer")
+    ranks, chose_right, abstained = [], 0, 0
+    for it in items:
+        frames, speech, scores = score_all(video_dir, it.q, asker.text, asker.image)
+        moments = fuse(frames, speech, scores)
+        r = first_hit(moments, it, speech)
+        ranks.append(r)
+        top = moments[0] if moments else None
+        row = ["[green]✓[/green]" if r and r <= n else "[red]✗[/red]", str(r or "-"), it.kind, escape(it.q),
+               f"{fmt_time(top.t)} {top.file[:-4]} ({describe_parts(top)})" if top else ""]
+        if answer:
+            try:
+                with log.status(f"Answering: {it.q}"):
+                    a = answer_question(it.q, moments, asker.vision, video_dir / "keyframes", cfg.answer)
+            except OllamaError as e:   # one failed question shouldn't end a 20-minute run
+                row.append(f"[red]error[/red]: {escape(str(e)[:70])}")
+                table.add_row(*row)
+                continue
+            if a.moment is None:
+                abstained += 1
+                verdict = "[yellow]no moment[/yellow]"
+            elif is_hit(a.moment, it, speech):
+                chose_right += 1
+                verdict = "[green]right moment[/green]"
+            else:
+                verdict = "[red]wrong moment[/red]"
+            row.append(f"{verdict}: {escape(a.text[:70])}")
+        table.add_row(*row)
+    log.print(table)
+    s = summarise(items, ranks, n)
+    kinds = "  ".join(f"{k} {ok}/{tot}" for k, (ok, tot) in s.by_kind.items())
+    log.print(f"\n[bold]hit@1 {s.hit1}/{s.n}   hit@{n} {s.hit_top}/{s.n}   MRR {s.mrr:.2f}[/bold]   [dim]{kinds}[/dim]")
+    if answer:
+        log.print(f"[bold]answering model picked the right moment {chose_right}/{s.n}[/bold], "
+                  f"said none answers it {abstained}/{s.n}  [dim](check the answer text by eye)[/dim]")
+
+
+@app.command()
+def ui(
+    port: int = typer.Option(7860, "--port", help="Port for the local web app"),
+) -> None:
+    """Open the web app: paste a link, prepare it, ask questions."""
+    from frameseek.app import launch
+    launch(port=port)
 
 
 # ---------- describe ----------

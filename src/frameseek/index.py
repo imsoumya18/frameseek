@@ -206,6 +206,64 @@ def build_index(
     return stats, False
 
 
+# ---------- reading rows back ----------
+
+def load_rows(video_dir: Path) -> tuple[list[dict], list[dict]]:
+    """All frames and speech chunks without their vectors, sorted by time."""
+    import lancedb
+
+    db = lancedb.connect(str(video_dir / "index.lance"))
+    names = _table_names(db)
+    ft = db.open_table("frames").to_arrow()
+    cols = [c for c in ["file", "t", "shot", "summary", "text", "has_text"] if c in ft.schema.names]
+    frames = ft.select(cols).to_pylist()
+    speech = (db.open_table("speech").to_arrow().select(["start", "end", "text"]).to_pylist()
+              if "speech" in names else [])
+    return sorted(frames, key=lambda r: r["t"]), sorted(speech, key=lambda r: r["start"])
+
+
+def score_all(video_dir: Path, question: str, text_emb, image_emb) -> tuple[list[dict], list[dict], dict]:
+    """Exact cosine similarity of the question with every frame, caption and speech chunk.
+
+    Returns (frames, speech, scores) with frames and speech sorted by time and
+    scores aligned to them. Fusion needs the whole distribution, not a top-k:
+    "how far above the rest" is what makes scores from different models
+    comparable. Exact search over a few thousand rows is a millisecond of numpy.
+    """
+    import lancedb
+
+    db = lancedb.connect(str(video_dir / "index.lance"))
+    names = _table_names(db)
+    ft = db.open_table("frames").to_arrow().to_pylist()
+    ft.sort(key=lambda r: r["t"])
+    st = sorted(db.open_table("speech").to_arrow().to_pylist(), key=lambda r: r["start"]) if "speech" in names else []
+
+    def unit(rows: list[dict], col: str) -> np.ndarray:
+        m = np.asarray([r[col] for r in rows], dtype=np.float32)
+        return m / np.maximum(np.linalg.norm(m, axis=1, keepdims=True), 1e-9)
+
+    def unit_vec(v) -> np.ndarray:
+        v = np.asarray(v, dtype=np.float32)
+        return v / max(float(np.linalg.norm(v)), 1e-9)
+
+    q_txt = unit_vec(text_emb.queries([question])[0])
+    q_img = unit_vec(image_emb.texts([question])[0])
+    scores: dict[str, np.ndarray] = {}
+    if ft:
+        cap = unit(ft, "txt_vec") @ q_txt
+        if "has_text" in ft[0]:
+            cap = np.where([r["has_text"] for r in ft], cap, np.nan)   # empty captions never match
+        scores["captions"] = cap
+        scores["frames"] = unit(ft, "img_vec") @ q_img
+    if st:
+        scores["speech"] = unit(st, "txt_vec") @ q_txt
+
+    keep = ["file", "t", "shot", "summary", "text", "has_text"]
+    frames = [{k: r[k] for k in keep if k in r} for r in ft]
+    speech = [{k: r[k] for k in ("start", "end", "text")} for r in st]
+    return frames, speech, scores
+
+
 # ---------- search ----------
 
 def search(video_dir: Path, question: str, text_emb, image_emb, k: int = 5) -> dict[str, list[dict]]:
@@ -224,9 +282,10 @@ def search(video_dir: Path, question: str, text_emb, image_emb, k: int = 5) -> d
     def run(table: str, column: str, vec: np.ndarray, where: str | None = None) -> list[dict]:
         if table not in names:
             return []
-        q = db.open_table(table).search(vec, vector_column_name=column).distance_type("cosine")
-        if where:
-            q = q.where(where, prefilter=True)   # filter first, then take the top k
+        tbl = db.open_table(table)
+        q = tbl.search(vec, vector_column_name=column).distance_type("cosine")
+        if where and where in tbl.schema.names:   # older indexes lack the column: search unfiltered
+            q = q.where(where, prefilter=True)    # filter first, then take the top k
         rows = q.limit(k).to_list()
         for r in rows:
             r["score"] = 1.0 - r.pop("_distance")

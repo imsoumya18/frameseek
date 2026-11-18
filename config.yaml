@@ -10,6 +10,8 @@ vision:
   max_image_side: 1024    # frames are downscaled to this before sending
   timeout_s: 180
   keep_alive: 30m         # how long Ollama keeps the model in memory after a call
+  num_ctx: 8192           # context window in tokens. Ollama's default (4096) overflows with 3 frames
+                          # (~3,700 tokens) plus captions and Bengali lyrics. Costs ~0.6 GB more memory on the 8B
 
 device: auto              # auto | cuda | mps | cpu (for in-process models)
 
@@ -41,3 +43,8 @@ embed:
   image_model: google/siglip2-base-patch16-224    # questions vs frame pixels (multilingual)
   speech_chunk_s: 15.0    # transcript lines merged into ~15 s chunks before embedding
   batch_size: 16
+
+answer:
+  model: ""               # answering model; empty = vision.model (8B). The 4B is ~2x faster, weaker judge
+  top_n: 3                # moments shown to the answering model (~1,240 input tokens per frame)
+  num_predict: 300

@@ -71,9 +71,10 @@ class VisionModel(Protocol):
         ...
 
     def structured(
-        self, image: Path, prompt: str, schema: dict, max_side: int | None = None, num_predict: int = 400
+        self, image: Path | list[Path], prompt: str, schema: dict,
+        max_side: int | None = None, num_predict: int = 400,
     ) -> tuple[dict, Timing]:
-        """Return JSON that is guaranteed to match `schema`, plus timing."""
+        """Return JSON that is guaranteed to match `schema`, plus timing. Accepts one image or several."""
         ...
 
 
@@ -180,14 +181,16 @@ class OllamaVision:
             "messages": [{"role": "user", "content": prompt, "images": [b64]}],
             "stream": True,
             "keep_alive": self.cfg.keep_alive,  # keep weights loaded between calls
-            "options": {"temperature": 0},      # deterministic: same frame, same caption
+            "options": {"temperature": 0, "num_ctx": self.cfg.num_ctx},  # deterministic: same frame, same caption
         }
         yield Status("Model is reading the image and prompt")
 
         with self.client.stream("POST", "/api/chat", json=payload) as resp:
             if resp.status_code != 200:
                 resp.read()
-                raise OllamaError(f"Ollama returned {resp.status_code}: {resp.text[:300]}")
+                hint = (" Raise vision.num_ctx in config.yaml."
+                        if "context size" in resp.text else "")
+                raise OllamaError(f"Ollama returned {resp.status_code}: {resp.text[:300]}{hint}")
 
             # Ollama streams newline-delimited JSON: one object per chunk.
             for line in resp.iter_lines():
@@ -205,21 +208,31 @@ class OllamaVision:
                     yield Done(_timing(chunk))
 
     def structured(
-        self, image: Path, prompt: str, schema: dict, max_side: int | None = None, num_predict: int = 400
+        self, image: Path | list[Path], prompt: str, schema: dict,
+        max_side: int | None = None, num_predict: int = 400,
     ) -> tuple[dict, Timing]:
-        """Constrained decoding: Ollama only allows tokens that keep the output valid for `schema`."""
-        b64, _, _ = encode_image(image, max_side or self.cfg.max_image_side)
+        """Constrained decoding: Ollama only allows tokens that keep the output valid for `schema`.
+
+        Several images can be sent in one message; they reach the model in order,
+        so a prompt can refer to them as image 1, image 2, ...
+        """
+        paths = image if isinstance(image, list) else [image]
+        side = max_side or self.cfg.max_image_side
+        images = [encode_image(p, side)[0] for p in paths]
         payload = {
             "model": self.cfg.model,
-            "messages": [{"role": "user", "content": prompt, "images": [b64]}],
+            "messages": [{"role": "user", "content": prompt, "images": images}],
             "stream": False,
             "format": schema,                       # the JSON schema the output must follow
             "keep_alive": self.cfg.keep_alive,
-            "options": {"temperature": 0, "num_predict": num_predict},  # cap runaway output
+            # num_ctx is the same on every call: a different value makes Ollama reload the model
+            "options": {"temperature": 0, "num_predict": num_predict, "num_ctx": self.cfg.num_ctx},
         }
         resp = self.client.post("/api/chat", json=payload)
         if resp.status_code != 200:
-            raise OllamaError(f"Ollama returned {resp.status_code}: {resp.text[:300]}")
+            hint = (" Raise vision.num_ctx in config.yaml, or lower answer.top_n."
+                    if "context size" in resp.text else "")
+            raise OllamaError(f"Ollama returned {resp.status_code}: {resp.text[:300]}{hint}")
         data = resp.json()
         content = data["message"]["content"]
         try:
