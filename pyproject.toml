@@ -1,0 +1,33 @@
+[project]
+name = "frameseek"
+version = "0.1.0"
+description = "Ask questions about anything in a video, said or shown, with evidence frames."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.27",
+    "pillow>=10.0",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+# Installed later (Section 6) when we add SigLIP2; devices.py works without it.
+torch = ["torch>=2.3"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+frameseek = "frameseek.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/frameseek"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

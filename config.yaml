@@ -1,0 +1,14 @@
+# Which models frameseek uses and where they run.
+# Change a line here to swap a model; no code changes needed.
+
+data_dir: data            # per-video cache lives in data/<video_id>/
+
+vision:
+  backend: ollama
+  model: qwen3-vl:8b-instruct
+  host: http://localhost:11434
+  max_image_side: 1024    # frames are downscaled to this before sending
+  timeout_s: 180
+  keep_alive: 30m         # how long Ollama keeps the model in memory after a call
+
+device: auto              # auto | cuda | mps | cpu (for in-process models)

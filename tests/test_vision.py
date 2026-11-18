@@ -1,0 +1,69 @@
+"""Tests for the Ollama client using a fake HTTP server (no real model needed)."""
+
+import json
+from pathlib import Path
+
+import httpx
+from PIL import Image
+
+from frameseek.config import VisionConfig
+from frameseek.models.vision import Done, OllamaVision, Status, Token, encode_image
+
+
+def _make_image(tmp_path: Path, size=(2000, 1000)) -> Path:
+    p = tmp_path / "frame.jpg"
+    Image.new("RGB", size, "red").save(p)
+    return p
+
+
+def test_encode_image_downscales_keeping_aspect(tmp_path: Path) -> None:
+    _, original, new = encode_image(_make_image(tmp_path), max_side=1024)
+    assert original == (2000, 1000)
+    assert new == (1024, 512)
+
+
+def _fake_ollama(request: httpx.Request) -> httpx.Response:
+    if request.url.path == "/api/ps":
+        return httpx.Response(200, json={"models": []})
+    if request.url.path == "/api/chat":
+        chunks = [
+            {"message": {"content": "A red "}, "done": False},
+            {"message": {"content": "square."}, "done": False},
+            {
+                "message": {"content": ""},
+                "done": True,
+                "load_duration": 2_000_000_000,
+                "prompt_eval_count": 300,
+                "prompt_eval_duration": 1_500_000_000,
+                "eval_count": 4,
+                "eval_duration": 500_000_000,
+                "total_duration": 4_000_000_000,
+            },
+        ]
+        body = "\n".join(json.dumps(c) for c in chunks) + "\n"
+        return httpx.Response(200, content=body.encode())
+    return httpx.Response(404)
+
+
+def _model() -> OllamaVision:
+    cfg = VisionConfig()
+    client = httpx.Client(base_url=cfg.host, transport=httpx.MockTransport(_fake_ollama))
+    return OllamaVision(cfg, client=client)
+
+
+def test_stream_yields_status_tokens_then_timing(tmp_path: Path) -> None:
+    events = list(_model().stream(_make_image(tmp_path), "describe"))
+
+    assert isinstance(events[0], Status)
+    assert any(isinstance(e, Status) and "Loading" in e.message for e in events)
+    assert "".join(e.text for e in events if isinstance(e, Token)) == "A red square."
+
+    done = events[-1]
+    assert isinstance(done, Done)
+    assert done.timing.load_s == 2.0
+    assert done.timing.prefill_tokens == 300
+    assert done.timing.decode_tok_per_s == 8.0
+
+
+def test_describe_joins_tokens(tmp_path: Path) -> None:
+    assert _model().describe(_make_image(tmp_path), "describe") == "A red square."

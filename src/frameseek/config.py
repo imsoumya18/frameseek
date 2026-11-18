@@ -1,0 +1,57 @@
+"""Loads config.yaml into typed settings objects.
+
+Lookup order for the config file:
+1. the path in the FRAMESEEK_CONFIG environment variable
+2. ./config.yaml in the current directory
+3. built-in defaults (so the code still runs with no file at all)
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field, fields
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+@dataclass
+class VisionConfig:
+    backend: str = "ollama"
+    model: str = "qwen3-vl:8b-instruct"
+    host: str = "http://localhost:11434"
+    max_image_side: int = 1024
+    timeout_s: float = 180.0
+    keep_alive: str = "30m"
+
+
+@dataclass
+class Config:
+    data_dir: Path = Path("data")
+    device: str = "auto"
+    vision: VisionConfig = field(default_factory=VisionConfig)
+
+
+def _pick(cls: type, raw: dict[str, Any]) -> dict[str, Any]:
+    """Keep only keys the dataclass knows about, so a typo in YAML fails loudly."""
+    known = {f.name for f in fields(cls)}
+    unknown = set(raw) - known
+    if unknown:
+        raise ValueError(f"Unknown {cls.__name__} keys in config: {sorted(unknown)}")
+    return raw
+
+
+def load_config(path: str | Path | None = None) -> Config:
+    path = Path(path or os.environ.get("FRAMESEEK_CONFIG", "config.yaml"))
+    raw: dict[str, Any] = {}
+    if path.exists():
+        raw = yaml.safe_load(path.read_text()) or {}
+
+    vision_raw = raw.pop("vision", {}) or {}
+    top = _pick(Config, raw)
+    return Config(
+        data_dir=Path(top.get("data_dir", "data")),
+        device=top.get("device", "auto"),
+        vision=VisionConfig(**_pick(VisionConfig, vision_raw)),
+    )
