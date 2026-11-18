@@ -27,10 +27,16 @@ class VisionConfig:
 
 
 @dataclass
+class IngestConfig:
+    max_height: int = 720   # download resolution cap; the VLM never sees more than ~1024px
+
+
+@dataclass
 class Config:
     data_dir: Path = Path("data")
     device: str = "auto"
     vision: VisionConfig = field(default_factory=VisionConfig)
+    ingest: IngestConfig = field(default_factory=IngestConfig)
 
 
 def _pick(cls: type, raw: dict[str, Any]) -> dict[str, Any]:
@@ -49,9 +55,11 @@ def load_config(path: str | Path | None = None) -> Config:
         raw = yaml.safe_load(path.read_text()) or {}
 
     vision_raw = raw.pop("vision", {}) or {}
+    ingest_raw = raw.pop("ingest", {}) or {}
     top = _pick(Config, raw)
     return Config(
         data_dir=Path(top.get("data_dir", "data")),
         device=top.get("device", "auto"),
         vision=VisionConfig(**_pick(VisionConfig, vision_raw)),
+        ingest=IngestConfig(**_pick(IngestConfig, ingest_raw)),
     )

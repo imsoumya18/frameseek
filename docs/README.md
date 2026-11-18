@@ -1,0 +1,22 @@
+# frameseek learning notes
+
+These notes explain the concepts behind each part of frameseek, in the order the
+project was built. Each chapter covers the ideas first, then points to the code
+that implements them, so you can read along with the source.
+
+| # | Chapter | Code |
+|---|---|---|
+| 1 | [Setup and architecture](01-setup-and-architecture.md) | `config.py`, `devices.py`, `models/vision.py`, `cli.py` |
+| 2 | [Video fundamentals and ingestion](02-video-fundamentals.md) | `ingest.py` |
+| 3 | Shot detection | coming next |
+| 4 | Speech to text | |
+| 5 | Vision-language models | |
+| 6 | Embeddings and vector search | |
+| 7 | Retrieval, answering and UI | |
+| 8 | Look again and grounding | |
+| 9 | Verify or abstain | |
+| 10 | Benchmark and evaluation | |
+| 11 | Indian scripts and languages | |
+| 12 | Results and lessons | |
+
+Each chapter ends with a few questions to check your understanding.

@@ -12,3 +12,6 @@ vision:
   keep_alive: 30m         # how long Ollama keeps the model in memory after a call
 
 device: auto              # auto | cuda | mps | cpu (for in-process models)
+
+ingest:
+  max_height: 720         # download cap; the vision model never sees more than ~1024px
