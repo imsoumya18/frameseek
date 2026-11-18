@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import shutil
 import sys
 import time
@@ -16,6 +17,7 @@ from frameseek.config import load_config
 from frameseek.devices import pick_device
 from frameseek.ingest import ingest as run_ingest
 from frameseek.ingest import require_tools
+from frameseek.shots import build_shots, contact_sheet
 from frameseek.models.vision import (
     Done,
     OllamaError,
@@ -67,13 +69,8 @@ def doctor() -> None:
 
 # ---------- ingest ----------
 
-@app.command()
-def ingest(
-    url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
-    force: bool = typer.Option(False, "--force", help="Download again even if cached"),
-) -> None:
-    """Download a YouTube video once into data/<video_id>/ and describe it."""
-    cfg = load_config()
+def _ingest_with_progress(cfg, url: str, force: bool = False):
+    """Run ingest with live progress bars. Returns (meta, was_cached, seconds)."""
     try:
         require_tools()
     except RuntimeError as exc:
@@ -115,8 +112,18 @@ def ingest(
     except ValueError as exc:
         log.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(code=1)
+    return meta, cached, time.perf_counter() - start
 
-    elapsed = time.perf_counter() - start
+
+@app.command()
+def ingest(
+    url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
+    force: bool = typer.Option(False, "--force", help="Download again even if cached"),
+) -> None:
+    """Download a YouTube video once into data/<video_id>/ and describe it."""
+    cfg = load_config()
+    meta, cached, elapsed = _ingest_with_progress(cfg, url, force)
+
     if cached:
         log.print(f"[green]Cached[/green] - already ingested, nothing to do ({elapsed:.1f}s)")
     else:
@@ -136,6 +143,72 @@ def ingest(
     subs = ", ".join(meta.manual_subtitles) or "none"
     table.add_row("captions", f"manual: {subs}; auto: {'yes' if meta.has_auto_captions else 'no'}")
     table.add_row("saved to", str(cfg.data_dir / meta.id / meta.file))
+    log.print(table)
+
+
+# ---------- shots ----------
+
+@app.command()
+def shots(
+    url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
+    force: bool = typer.Option(False, "--force", help="Re-detect even if cached"),
+    sheet: bool = typer.Option(True, "--sheet/--no-sheet", help="Write contact_sheet.jpg"),
+) -> None:
+    """Split a video into shots and extract keyframes (runs ingest first if needed)."""
+    cfg = load_config()
+    meta, _, _ = _ingest_with_progress(cfg, url)
+    video_dir = cfg.data_dir / meta.id
+
+    start = time.perf_counter()
+    progress = Progress(
+        TextColumn("{task.description:<20}"),
+        BarColumn(),
+        TextColumn("{task.fields[detail]}"),
+        console=log,
+        transient=True,
+    )
+    tasks: dict[str, int] = {}
+
+    def on_progress(ev: dict) -> None:
+        if ev["stage"] == "detect":
+            if "detect" not in tasks:
+                tasks["detect"] = progress.add_task("Detecting cuts", total=ev["total"], detail="")
+            progress.update(tasks["detect"], completed=ev["done"],
+                            detail=f"{ev['done']:.0f}/{ev['total']:.0f}s of video")
+        elif ev["stage"] == "extract":
+            if "extract" not in tasks:
+                tasks["extract"] = progress.add_task("Extracting keyframes", total=ev["total"], detail="")
+            progress.update(tasks["extract"], completed=ev["done"],
+                            detail=f"{ev['done']}/{ev['total']} frames")
+
+    with progress:
+        shot_list, cached = build_shots(
+            video_dir, meta.file, params=cfg.shots, force=force, on_progress=on_progress
+        )
+    elapsed = time.perf_counter() - start
+
+    if cached:
+        log.print(f"[green]Cached[/green] - shots already detected with these settings ({elapsed:.1f}s)")
+    else:
+        log.print(f"[green]Detected[/green] in {elapsed:.1f}s")
+
+    lengths = sorted(s.duration_s for s in shot_list)
+    n_kf = sum(len(s.keyframes) for s in shot_list)
+    longest = max(shot_list, key=lambda s: s.duration_s)
+    every_2s = math.ceil(meta.duration_s / 2)
+
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_column(style="dim")
+    table.add_column()
+    table.add_row("shots", str(len(shot_list)))
+    table.add_row("shot length", f"median {lengths[len(lengths) // 2]:.1f}s, "
+                                 f"shortest {lengths[0]:.1f}s, longest {lengths[-1]:.1f}s "
+                                 f"(shot {longest.index})")
+    table.add_row("keyframes", f"{n_kf} (vs {every_2s} if sampling every 2s: "
+                               f"{every_2s / max(n_kf, 1):.1f}x fewer to caption)")
+    table.add_row("saved to", str(video_dir / "keyframes"))
+    if sheet:
+        table.add_row("contact sheet", str(contact_sheet(video_dir, shot_list)))
     log.print(table)
 
 

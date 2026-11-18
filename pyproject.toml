@@ -9,6 +9,7 @@ dependencies = [
     "pillow>=10.0",
     "pyyaml>=6.0",
     "rich>=13.0",
+    "scenedetect[opencv-headless]>=0.7",
     "typer>=0.12",
     "yt-dlp>=2025.1.1",
 ]

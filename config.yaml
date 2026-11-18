@@ -15,3 +15,9 @@ device: auto              # auto | cuda | mps | cpu (for in-process models)
 
 ingest:
   max_height: 720         # download cap; the vision model never sees more than ~1024px
+
+shots:
+  adaptive_threshold: 3.0 # cut if a frame changes this many times more than its neighbours
+  min_content_val: 15.0   # ...and its raw change score is at least this
+  min_shot_s: 0.6         # no new cut within this many seconds of the last (stops flashes)
+  every_s: 10.0           # long shots get an extra keyframe every ~10 s

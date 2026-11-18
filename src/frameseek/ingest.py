@@ -242,7 +242,8 @@ def ingest(
         title=info.get("title", ""),
         channel=info.get("channel") or info.get("uploader") or "",
         language=info.get("language"),
-        manual_subtitles=sorted((info.get("subtitles") or {}).keys()),
+        # yt-dlp lists a live-chat replay under "subtitles"; it is not a caption track.
+        manual_subtitles=sorted(k for k in (info.get("subtitles") or {}) if k != "live_chat"),
         has_auto_captions=bool(info.get("automatic_captions")),
         **probed,
     )

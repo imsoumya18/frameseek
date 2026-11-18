@@ -32,11 +32,21 @@ class IngestConfig:
 
 
 @dataclass
+class ShotsConfig:
+    """Every setting that changes shot detection. Stored in shots.json as the cache key."""
+    adaptive_threshold: float = 3.0   # cut if a frame's change is this many times its neighbours'
+    min_content_val: float = 15.0     # ...and its raw change score is at least this
+    min_shot_s: float = 0.6           # ignore a new cut this soon after the previous one
+    every_s: float = 10.0             # extra keyframes inside shots longer than this
+
+
+@dataclass
 class Config:
     data_dir: Path = Path("data")
     device: str = "auto"
     vision: VisionConfig = field(default_factory=VisionConfig)
     ingest: IngestConfig = field(default_factory=IngestConfig)
+    shots: ShotsConfig = field(default_factory=ShotsConfig)
 
 
 def _pick(cls: type, raw: dict[str, Any]) -> dict[str, Any]:
@@ -56,10 +66,12 @@ def load_config(path: str | Path | None = None) -> Config:
 
     vision_raw = raw.pop("vision", {}) or {}
     ingest_raw = raw.pop("ingest", {}) or {}
+    shots_raw = raw.pop("shots", {}) or {}
     top = _pick(Config, raw)
     return Config(
         data_dir=Path(top.get("data_dir", "data")),
         device=top.get("device", "auto"),
         vision=VisionConfig(**_pick(VisionConfig, vision_raw)),
         ingest=IngestConfig(**_pick(IngestConfig, ingest_raw)),
+        shots=ShotsConfig(**_pick(ShotsConfig, shots_raw)),
     )
