@@ -41,12 +41,24 @@ class ShotsConfig:
 
 
 @dataclass
+class TranscribeConfig:
+    source: str = "auto"            # auto (captions, else Whisper) | youtube | whisper
+    whisper_model: str = "large-v3-turbo"  # best for Indian languages; small = quick tests
+    language_model: str = "small"   # detects the language; turbo is poor at this (see docs/04)
+    vad: bool = True                # transcribe only stretches with speech
+    beam_size: int = 5              # 1 = greedy (faster), 5 = beam search (more accurate)
+    language: str = ""              # force a language code, e.g. "bn"; empty = detect
+    device: str = "auto"            # auto (CUDA, else CPU) | cpu | cuda | mps (experimental)
+
+
+@dataclass
 class Config:
     data_dir: Path = Path("data")
     device: str = "auto"
     vision: VisionConfig = field(default_factory=VisionConfig)
     ingest: IngestConfig = field(default_factory=IngestConfig)
     shots: ShotsConfig = field(default_factory=ShotsConfig)
+    transcribe: TranscribeConfig = field(default_factory=TranscribeConfig)
 
 
 def _pick(cls: type, raw: dict[str, Any]) -> dict[str, Any]:
@@ -67,6 +79,7 @@ def load_config(path: str | Path | None = None) -> Config:
     vision_raw = raw.pop("vision", {}) or {}
     ingest_raw = raw.pop("ingest", {}) or {}
     shots_raw = raw.pop("shots", {}) or {}
+    transcribe_raw = raw.pop("transcribe", {}) or {}
     top = _pick(Config, raw)
     return Config(
         data_dir=Path(top.get("data_dir", "data")),
@@ -74,4 +87,5 @@ def load_config(path: str | Path | None = None) -> Config:
         vision=VisionConfig(**_pick(VisionConfig, vision_raw)),
         ingest=IngestConfig(**_pick(IngestConfig, ingest_raw)),
         shots=ShotsConfig(**_pick(ShotsConfig, shots_raw)),
+        transcribe=TranscribeConfig(**_pick(TranscribeConfig, transcribe_raw)),
     )

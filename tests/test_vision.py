@@ -67,3 +67,19 @@ def test_stream_yields_status_tokens_then_timing(tmp_path: Path) -> None:
 
 def test_describe_joins_tokens(tmp_path: Path) -> None:
     assert _model().describe(_make_image(tmp_path), "describe") == "A red square."
+
+
+def _ps(models):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"models": models})
+    cfg = VisionConfig()
+    return OllamaVision(cfg, client=httpx.Client(base_url=cfg.host, transport=httpx.MockTransport(handler)))
+
+
+def test_residency_reports_gpu_share() -> None:
+    m = _ps([{"name": "qwen3-vl:8b-instruct", "size": 6_000, "size_vram": 6_000}])
+    assert m.residency() == (6_000, 6_000)
+
+
+def test_residency_none_when_not_loaded() -> None:
+    assert _ps([]).residency() is None

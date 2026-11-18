@@ -8,8 +8,8 @@ and get the answer with the moment and the frame as evidence.
 frameseek runs entirely on your own machine with open-source models, and is being
 built with Indian-language videos (Hindi, Bengali, Telugu and code-mixed speech) in mind.
 
-**Status:** work in progress. Ingestion and shot detection work today; captioning,
-search and answering are next. See the [roadmap](#roadmap).
+**Status:** work in progress. Download, shot detection and speech-to-text work today;
+frame captioning, search and answering are next. See the [roadmap](#roadmap).
 
 ---
 
@@ -41,8 +41,8 @@ Expensive work happens once at indexing time, so answering stays fast.
 |---|---|---|
 | Download | Fetches the video once (≤720p) into a per-video cache, keyed by video ID | Done |
 | Shots + keyframes | Splits the video at cuts and keeps one frame per shot, plus extra frames in long shots | Done |
-| Speech | Timestamped transcript from YouTube captions or local speech-to-text | Next |
-| Captions | A local vision-language model describes each keyframe | Planned |
+| Speech | Word-timestamped transcript: YouTube captions if their language checks out, else local Whisper | Done |
+| Captions | A local vision-language model describes each keyframe | Next |
 | Index | Frame, caption and transcript embeddings in a local vector database | Planned |
 | Search + answer | Finds candidate moments, looks again at those frames, answers with evidence | Planned |
 
@@ -69,6 +69,9 @@ uv run frameseek ingest "https://youtu.be/<video_id>"
 # Split it into shots and extract keyframes (runs ingest first if needed)
 uv run frameseek shots "https://youtu.be/<video_id>"
 
+# Timestamped speech: YouTube captions if available, otherwise local Whisper
+uv run frameseek transcribe "https://youtu.be/<video_id>"
+
 # Ask the vision model about any single image
 uv run frameseek describe path/to/image.jpg -p "What colour is the car?"
 ```
@@ -81,6 +84,7 @@ data/<video_id>/
 ├── meta.json            duration, fps, codecs, keyframe spacing, available captions
 ├── shots.json           shot boundaries and chosen keyframes (with the settings used)
 ├── keyframes/           one JPEG per keyframe
+├── transcript.json      speech with word timestamps, its source and language
 └── contact_sheet.jpg    every keyframe in a grid, for checking results by eye
 ```
 
@@ -96,6 +100,7 @@ On a MacBook Air (16 GB), with a 4.8-minute music video:
 | Shot detection | 84 shots found in 8.3 s (about 34x faster than real time) |
 | Keyframes | 88, versus 143 if sampling a frame every 2 s |
 | Vision model, one frame | ~20 s warm (14.5 s reading the image, 6.1 s writing the answer) |
+| Speech, Bengali song | YouTube captions came out in Hindi (wrong uploader tag). Whisper `small` detects Bengali, `large-v3-turbo` transcribes it in Bengali script (~144 s) |
 
 The last row is why the next steps index frames at low resolution with short
 captions, and spend high-resolution compute only on the frames a question needs.
@@ -114,7 +119,9 @@ shots:
   every_s: 10.0       # extra keyframes inside long shots
 ```
 
-In-process models pick the best device automatically: CUDA, Apple Silicon (MPS) or CPU.
+Each engine picks its own device: PyTorch models use CUDA, Apple Silicon (MPS) or CPU;
+Whisper uses CUDA or CPU; the vision model runs wherever Ollama puts it (Metal on a Mac).
+`frameseek doctor` shows all three.
 
 ## Documentation
 
@@ -124,6 +131,7 @@ the order they were built, with diagrams and self-check questions:
 - [Setup and architecture](docs/01-setup-and-architecture.md): two-phase design, model servers vs in-process models, prefill vs decode
 - [Video fundamentals and ingestion](docs/02-video-fundamentals.md): containers and codecs, I/P/B frames, seeking, atomic caching
 - [Shot detection](docs/03-shot-detection.md): change scores, adaptive thresholds, precision vs recall
+- [Speech to text](docs/04-speech-to-text.md): spectrograms, encoder-decoder, word timestamps, hallucinations
 
 See the [docs index](docs/README.md) for all chapters.
 
@@ -132,7 +140,7 @@ See the [docs index](docs/README.md) for all chapters.
 - [x] 1. Setup and architecture
 - [x] 2. Video download and caching
 - [x] 3. Shot detection and keyframes
-- [ ] 4. Speech to text
+- [x] 4. Speech to text
 - [ ] 5. Frame captioning with a vision-language model
 - [ ] 6. Embeddings and vector search
 - [ ] 7. Search, answering and a web UI (first end-to-end demo)
@@ -155,5 +163,11 @@ src/frameseek/
 ├── devices.py       CUDA / MPS / CPU selection
 ├── ingest.py        download, probe, cache
 ├── shots.py         shot detection, keyframes, contact sheet
+├── transcribe.py    YouTube captions or Whisper, word timestamps
 └── models/vision.py vision model interface + Ollama backend
 ```
+
+## License
+
+[MIT](LICENSE). Models are downloaded separately and keep their own licences
+(Qwen3-VL is Apache-2.0).

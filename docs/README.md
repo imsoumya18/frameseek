@@ -9,7 +9,7 @@ that implements them, so you can read along with the source.
 | 1 | [Setup and architecture](01-setup-and-architecture.md) | `config.py`, `devices.py`, `models/vision.py`, `cli.py` |
 | 2 | [Video fundamentals and ingestion](02-video-fundamentals.md) | `ingest.py` |
 | 3 | [Shot detection](03-shot-detection.md) | `shots.py` |
-| 4 | Speech to text | |
+| 4 | [Speech to text](04-speech-to-text.md) | `transcribe.py` |
 | 5 | Vision-language models | |
 | 6 | Embeddings and vector search | |
 | 7 | Retrieval, answering and UI | |

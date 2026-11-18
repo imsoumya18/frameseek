@@ -132,6 +132,22 @@ class OllamaVision:
         running = {m.get("name") or m.get("model") for m in resp.json().get("models", [])}
         return self.cfg.model in running
 
+    def residency(self) -> tuple[int, int] | None:
+        """(total_bytes, bytes_in_gpu_memory) for the loaded model, or None if not loaded.
+
+        Ollama picks its own device (Metal on Apple Silicon, CUDA on NVIDIA);
+        size_vram tells us how much of the model actually sits on the GPU.
+        """
+        try:
+            resp = self.client.get("/api/ps")
+            resp.raise_for_status()
+        except httpx.HTTPError:
+            return None
+        for m in resp.json().get("models", []):
+            if (m.get("name") or m.get("model")) == self.cfg.model:
+                return int(m.get("size", 0)), int(m.get("size_vram", 0))
+        return None
+
     def stream(self, image: Path, prompt: str) -> Iterator[Event]:
         b64, original, new = encode_image(image, self.cfg.max_image_side)
         yield Status(f"Encoded image {original[0]}x{original[1]} -> {new[0]}x{new[1]}")

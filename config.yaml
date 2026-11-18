@@ -21,3 +21,12 @@ shots:
   min_content_val: 15.0   # ...and its raw change score is at least this
   min_shot_s: 0.6         # no new cut within this many seconds of the last (stops flashes)
   every_s: 10.0           # long shots get an extra keyframe every ~10 s
+
+transcribe:
+  source: auto            # auto = YouTube captions if any, else Whisper | youtube | whisper
+  whisper_model: large-v3-turbo  # Bengali in Bengali script; ~same CPU speed as small. small = quick tests
+  language_model: small   # detects the language first; turbo's small decoder misidentifies it
+  vad: true               # only transcribe stretches with speech (stops hallucinations on music)
+  beam_size: 5            # 1 = greedy and faster; 5 = beam search, more accurate
+  language: ""            # force a language, e.g. "bn"; empty = detect
+  device: auto            # auto (CUDA, else CPU) | cpu | cuda | mps (experimental in CTranslate2)
