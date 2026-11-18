@@ -30,3 +30,8 @@ transcribe:
   beam_size: 5            # 1 = greedy and faster; 5 = beam search, more accurate
   language: ""            # force a language, e.g. "bn"; empty = detect
   device: auto            # auto (CUDA, else CPU) | cpu | cuda | mps (experimental in CTranslate2)
+
+caption:
+  model: qwen3-vl:4b-instruct   # ~1.9x faster than the 8B per frame, same summary on our test frame; empty = vision.model
+  max_image_side: 1024    # Ollama resizes every image to its own size: smaller saves nothing, loses detail
+  num_predict: 300        # hard cap on output tokens per frame

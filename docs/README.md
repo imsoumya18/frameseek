@@ -10,7 +10,7 @@ that implements them, so you can read along with the source.
 | 2 | [Video fundamentals and ingestion](02-video-fundamentals.md) | `ingest.py` |
 | 3 | [Shot detection](03-shot-detection.md) | `shots.py` |
 | 4 | [Speech to text](04-speech-to-text.md) | `transcribe.py` |
-| 5 | Vision-language models | |
+| 5 | [Vision-language models](05-vision-language-models.md) | `caption.py`, `models/vision.py` |
 | 6 | Embeddings and vector search | |
 | 7 | Retrieval, answering and UI | |
 | 8 | Look again and grounding | |

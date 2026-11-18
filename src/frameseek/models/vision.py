@@ -70,6 +70,12 @@ class VisionModel(Protocol):
         """Return the full answer about a single image."""
         ...
 
+    def structured(
+        self, image: Path, prompt: str, schema: dict, max_side: int | None = None, num_predict: int = 400
+    ) -> tuple[dict, Timing]:
+        """Return JSON that is guaranteed to match `schema`, plus timing."""
+        ...
+
 
 class OllamaError(RuntimeError):
     pass
@@ -95,6 +101,18 @@ def encode_image(path: Path, max_side: int) -> tuple[str, tuple[int, int], tuple
 
 def _ns_to_s(ns: int | None) -> float:
     return (ns or 0) / 1e9
+
+
+def _timing(chunk: dict) -> Timing:
+    """Ollama reports durations in nanoseconds on the final response chunk."""
+    return Timing(
+        load_s=_ns_to_s(chunk.get("load_duration")),
+        prefill_s=_ns_to_s(chunk.get("prompt_eval_duration")),
+        prefill_tokens=chunk.get("prompt_eval_count", 0),
+        decode_s=_ns_to_s(chunk.get("eval_duration")),
+        decode_tokens=chunk.get("eval_count", 0),
+        total_s=_ns_to_s(chunk.get("total_duration")),
+    )
 
 
 # ---------- Ollama ----------
@@ -184,16 +202,31 @@ class OllamaVision:
                     yield Token(text)
 
                 if chunk.get("done"):
-                    yield Done(
-                        Timing(
-                            load_s=_ns_to_s(chunk.get("load_duration")),
-                            prefill_s=_ns_to_s(chunk.get("prompt_eval_duration")),
-                            prefill_tokens=chunk.get("prompt_eval_count", 0),
-                            decode_s=_ns_to_s(chunk.get("eval_duration")),
-                            decode_tokens=chunk.get("eval_count", 0),
-                            total_s=_ns_to_s(chunk.get("total_duration")),
-                        )
-                    )
+                    yield Done(_timing(chunk))
+
+    def structured(
+        self, image: Path, prompt: str, schema: dict, max_side: int | None = None, num_predict: int = 400
+    ) -> tuple[dict, Timing]:
+        """Constrained decoding: Ollama only allows tokens that keep the output valid for `schema`."""
+        b64, _, _ = encode_image(image, max_side or self.cfg.max_image_side)
+        payload = {
+            "model": self.cfg.model,
+            "messages": [{"role": "user", "content": prompt, "images": [b64]}],
+            "stream": False,
+            "format": schema,                       # the JSON schema the output must follow
+            "keep_alive": self.cfg.keep_alive,
+            "options": {"temperature": 0, "num_predict": num_predict},  # cap runaway output
+        }
+        resp = self.client.post("/api/chat", json=payload)
+        if resp.status_code != 200:
+            raise OllamaError(f"Ollama returned {resp.status_code}: {resp.text[:300]}")
+        data = resp.json()
+        content = data["message"]["content"]
+        try:
+            return json.loads(content), _timing(data)
+        except json.JSONDecodeError as exc:
+            # Only possible if generation hit num_predict before the JSON closed.
+            raise OllamaError(f"Output was cut off before the JSON finished: {content[:200]}") from exc
 
     def describe(self, image: Path, prompt: str) -> str:
         return "".join(e.text for e in self.stream(image, prompt) if isinstance(e, Token)).strip()

@@ -52,6 +52,13 @@ class TranscribeConfig:
 
 
 @dataclass
+class CaptionConfig:
+    model: str = ""              # model for indexing captions; empty = use vision.model
+    max_image_side: int = 1024   # Ollama resizes images itself; sending less only loses detail
+    num_predict: int = 300       # hard cap on output tokens per frame
+
+
+@dataclass
 class Config:
     data_dir: Path = Path("data")
     device: str = "auto"
@@ -59,6 +66,7 @@ class Config:
     ingest: IngestConfig = field(default_factory=IngestConfig)
     shots: ShotsConfig = field(default_factory=ShotsConfig)
     transcribe: TranscribeConfig = field(default_factory=TranscribeConfig)
+    caption: CaptionConfig = field(default_factory=CaptionConfig)
 
 
 def _pick(cls: type, raw: dict[str, Any]) -> dict[str, Any]:
@@ -80,6 +88,7 @@ def load_config(path: str | Path | None = None) -> Config:
     ingest_raw = raw.pop("ingest", {}) or {}
     shots_raw = raw.pop("shots", {}) or {}
     transcribe_raw = raw.pop("transcribe", {}) or {}
+    caption_raw = raw.pop("caption", {}) or {}
     top = _pick(Config, raw)
     return Config(
         data_dir=Path(top.get("data_dir", "data")),
@@ -88,4 +97,5 @@ def load_config(path: str | Path | None = None) -> Config:
         ingest=IngestConfig(**_pick(IngestConfig, ingest_raw)),
         shots=ShotsConfig(**_pick(ShotsConfig, shots_raw)),
         transcribe=TranscribeConfig(**_pick(TranscribeConfig, transcribe_raw)),
+        caption=CaptionConfig(**_pick(CaptionConfig, caption_raw)),
     )

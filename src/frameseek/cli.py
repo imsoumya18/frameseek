@@ -6,13 +6,24 @@ import math
 import shutil
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import typer
 from rich.console import Console
-from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn, TransferSpeedColumn
+from rich.markup import escape
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    MofNCompleteColumn,
+    Progress,
+    TextColumn,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+)
 from rich.table import Table
 
+from frameseek.caption import CAPTION_PROMPT, CAPTION_SCHEMA, caption_keyframes
 from frameseek.config import load_config
 from frameseek.devices import ctranslate2_device, pick_device
 from frameseek.ingest import ingest as run_ingest
@@ -155,8 +166,8 @@ def ingest(
     table.add_column(style="dim")
     table.add_column()
     table.add_row("id", meta.id)
-    table.add_row("title", meta.title)
-    table.add_row("channel", meta.channel)
+    table.add_row("title", escape(meta.title))
+    table.add_row("channel", escape(meta.channel))
     table.add_row("duration", f"{meta.duration_s / 60:.1f} min")
     table.add_row("video", f"{meta.width}x{meta.height} @ {meta.fps:g} fps, {meta.vcodec}")
     table.add_row("audio", meta.acodec or "none")
@@ -170,17 +181,9 @@ def ingest(
 
 # ---------- shots ----------
 
-@app.command()
-def shots(
-    url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
-    force: bool = typer.Option(False, "--force", help="Re-detect even if cached"),
-    sheet: bool = typer.Option(True, "--sheet/--no-sheet", help="Write contact_sheet.jpg"),
-) -> None:
-    """Split a video into shots and extract keyframes (runs ingest first if needed)."""
-    cfg = load_config()
-    meta, _, _ = _ingest_with_progress(cfg, url)
+def _shots_with_progress(cfg, meta, force: bool = False):
+    """Run shot detection with progress bars. Returns (shots, was_cached, seconds)."""
     video_dir = cfg.data_dir / meta.id
-
     start = time.perf_counter()
     progress = Progress(
         TextColumn("{task.description:<20}"),
@@ -207,7 +210,20 @@ def shots(
         shot_list, cached = build_shots(
             video_dir, meta.file, params=cfg.shots, force=force, on_progress=on_progress
         )
-    elapsed = time.perf_counter() - start
+    return shot_list, cached, time.perf_counter() - start
+
+
+@app.command()
+def shots(
+    url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
+    force: bool = typer.Option(False, "--force", help="Re-detect even if cached"),
+    sheet: bool = typer.Option(True, "--sheet/--no-sheet", help="Write contact_sheet.jpg"),
+) -> None:
+    """Split a video into shots and extract keyframes (runs ingest first if needed)."""
+    cfg = load_config()
+    meta, _, _ = _ingest_with_progress(cfg, url)
+    video_dir = cfg.data_dir / meta.id
+    shot_list, cached, elapsed = _shots_with_progress(cfg, meta, force)
 
     if cached:
         log.print(f"[green]Cached[/green] - shots already detected with these settings ({elapsed:.1f}s)")
@@ -338,9 +354,138 @@ def transcribe(
     if tr.segments and lines > 0:
         log.print()
         for s in tr.segments[:lines]:
-            log.print(f"[dim]{_fmt_t(s.start):>7}[/dim]  {s.text}")
+            log.print(f"[dim]{_fmt_t(s.start):>7}[/dim]  {escape(s.text)}")
         if len(tr.segments) > lines:
             log.print(f"[dim]   ... {len(tr.segments) - lines} more[/dim]")
+
+
+# ---------- caption ----------
+
+@app.command()
+def caption(
+    url: str = typer.Argument(..., help="YouTube URL (any form) or 11-character video ID"),
+    force: bool = typer.Option(False, "--force", help="Re-caption every frame"),
+    side: int = typer.Option(None, "--side", help="Image size sent to the model (overrides config)"),
+    show: int = typer.Option(6, "--show", help="How many captions to preview"),
+) -> None:
+    """Describe every keyframe as structured JSON (runs ingest and shots first if needed)."""
+    cfg = load_config()
+    if side:
+        cfg.caption.max_image_side = side
+    meta, _, _ = _ingest_with_progress(cfg, url)
+    shot_list, _, _ = _shots_with_progress(cfg, meta)
+    video_dir = cfg.data_dir / meta.id
+
+    model_name = cfg.caption.model or cfg.vision.model
+    model = build_vision_model(replace(cfg.vision, model=model_name))
+    if isinstance(model, OllamaVision):
+        try:
+            model.health()
+        except OllamaError as exc:
+            log.print(f"[red]error:[/red] {exc}")
+            raise typer.Exit(code=1)
+
+    start = time.perf_counter()
+    progress = Progress(
+        TextColumn("Captioning"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeRemainingColumn(),
+        TextColumn("{task.fields[detail]}"),
+        console=log,
+        transient=True,
+    )
+    task: list[int] = []
+
+    def on_progress(ev: dict) -> None:
+        if not task:
+            task.append(progress.add_task("cap", total=ev["total"], detail=""))
+        rec = ev["record"]
+        if rec.get("caption"):
+            t = rec["timing"]
+            detail = f"{(t['prefill_s'] + t['decode_s']):.1f}s  {escape(rec['caption']['summary'][:48])}"
+        else:
+            detail = "[red]error, will retry next run[/red]"
+        progress.update(task[0], completed=ev["done"], detail=detail)
+
+    with progress:
+        result = caption_keyframes(video_dir, shot_list, model, model_name, cfg.caption,
+                                   force=force, on_progress=on_progress)
+    elapsed = time.perf_counter() - start
+
+    timed = [r["timing"] for r in result.records if "timing" in r]
+    per_frame = [t["prefill_s"] + t["decode_s"] for t in timed]
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_column(style="dim")
+    table.add_column()
+    table.add_row("frames", f"{len(result.records)} captioned "
+                            f"({result.newly_done} new, {result.from_cache} cached, {result.errors} errors)")
+    if per_frame:
+        table.add_row("per frame", f"{sum(per_frame) / len(per_frame):.1f}s average "
+                                   f"({sum(t['prefill_tokens'] for t in timed) / len(timed):.0f} input tokens, "
+                                   f"{sum(t['decode_tokens'] for t in timed) / len(timed):.0f} output tokens)")
+    table.add_row("model", model_name)
+    table.add_row("this run", f"{elapsed:.0f}s")
+    table.add_row("saved to", str(video_dir / "captions.jsonl"))
+    log.print(table)
+
+    for r in result.records[:show]:
+        c = r["caption"]
+        text = f"  [dim]text: {escape(', '.join(c['text_on_screen']))}[/dim]" if c["text_on_screen"] else ""
+        log.print(f"[dim]{_fmt_t(r['t']):>7}[/dim]  {escape('[' + c['shot'] + ']')} {escape(c['summary'])}{text}")
+
+
+@app.command(name="bench-vision")
+def bench_vision(
+    image: Path = typer.Argument(..., exists=True, dir_okay=False, help="A keyframe to test with"),
+    sides: str = typer.Option("512,1024", "--sides", help="Comma-separated sizes"),
+    model_name: str = typer.Option(None, "--model", help="Vision model to test, e.g. qwen3-vl:4b-instruct"),
+) -> None:
+    """Caption one image at several sizes: real token counts, timing and output on this machine."""
+    import tempfile
+
+    from PIL import Image
+
+    cfg = load_config()
+    name = model_name or cfg.caption.model or cfg.vision.model
+    model = build_vision_model(replace(cfg.vision, model=name))
+    sizes = [int(x) for x in sides.split(",")]
+
+    # Warm up on a *different* image: reusing the test image would let Ollama's
+    # prompt cache skip the first row's prefill and report a fake 0.1 s.
+    with tempfile.TemporaryDirectory() as tmp, \
+            log.status(f"Loading {name} (warm-up on a throwaway image)..."):
+        dummy = Path(tmp) / "warmup.jpg"
+        Image.effect_noise((640, 360), 64).convert("RGB").save(dummy)
+        try:
+            model.structured(dummy, CAPTION_PROMPT, CAPTION_SCHEMA, max_side=min(sizes), num_predict=8)
+        except OllamaError:
+            pass   # 8 tokens can't finish the JSON; we only wanted the model loaded
+
+    table = Table(title=f"{image.name} with {name}")
+    for col in ("side", "input tokens", "read (prefill)", "output tokens", "write (decode)", "total"):
+        table.add_column(col, justify="right")
+    table.add_column("summary / text seen", max_width=50)
+
+    import random
+
+    for side in sizes:
+        # Ollama reuses cached work for an input it has seen before, even from an
+        # earlier run. Changing one random pixel makes every row a genuine cold read.
+        with tempfile.TemporaryDirectory() as tmp, log.status(f"Captioning at {side}px..."):
+            fresh = Path(tmp) / f"bench{image.suffix}"
+            with Image.open(image) as img:
+                img = img.convert("RGB")
+                img.putpixel((random.randrange(img.width), random.randrange(img.height)),
+                             tuple(random.randrange(256) for _ in range(3)))
+                img.save(fresh, quality=95)
+            cap, t = model.structured(fresh, CAPTION_PROMPT, CAPTION_SCHEMA, max_side=side)
+        seen = escape(cap["summary"]) + (f"  [dim]text: {escape(', '.join(cap['text_on_screen']))}[/dim]"
+                                         if cap["text_on_screen"] else "")
+        table.add_row(str(side), str(t.prefill_tokens), f"{t.prefill_s:.1f}s", str(t.decode_tokens),
+                      f"{t.decode_s:.1f}s", f"{t.prefill_s + t.decode_s:.1f}s", seen)
+    log.print(table)
+    log.print("[dim]Rows run one after another: on a fanless laptop, later rows can slow down as it heats up.[/dim]")
 
 
 # ---------- describe ----------
