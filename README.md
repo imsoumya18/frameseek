@@ -46,6 +46,7 @@ Expensive work happens once at indexing time, so answering stays fast.
 | Index | Caption, frame-pixel and speech embeddings in a local vector database (LanceDB) | Done |
 | Search + answer | Fuses the three sources into ranked moments; a vision model reads the top frames and answers with the moment and evidence | Done |
 | Look again | Checks moments one at a time, asks the model where the answer is (a box), zooms into it and confirms | Done |
+| Verify or abstain | Quoted speech or on-screen text must be in the source and must answer the question; otherwise keep looking, then "can't tell" | Built, measuring |
 
 ## Try it
 
@@ -174,6 +175,7 @@ the order they were built, with diagrams and self-check questions:
 - [Embeddings and search](docs/06-embeddings-and-search.md): contrastive learning, cosine similarity, exact vs ANN search
 - [Retrieval and answering](docs/07-retrieval-and-answering.md): z-score fusion (and why rank fusion failed), retrieve-then-rerank, answering from evidence, measuring retrieval
 - [Looking again](docs/08-look-again.md): token budgets, grounding boxes, crop and zoom, a one-frame-at-a-time loop with early stop
+- [Verify or abstain](docs/09-verify-or-abstain.md): made-up evidence vs unsupported claims, fuzzy quote checks, risk vs coverage
 
 See the [docs index](docs/README.md) for all chapters.
 
@@ -186,7 +188,7 @@ See the [docs index](docs/README.md) for all chapters.
 - [x] 5. Frame captioning with a vision-language model
 - [x] 6. Embeddings and vector search
 - [x] 7. Search, answering and a web UI (first end-to-end demo)
-- [ ] 8. Looking again: zooming into frames and locating objects
+- [x] 8. Looking again: zooming into frames and locating objects
 - [ ] 9. Verifying answers, or saying "can't tell"
 - [ ] 10. Benchmark against transcript-only search and hosted models
 - [ ] 11. Indian scripts and languages
@@ -211,6 +213,7 @@ src/frameseek/
 ├── answer.py        z-score fusion, moments, answering from evidence
 ├── look.py          look again: one moment at a time, zoom, confirm
 ├── zoom.py          model boxes (0-1000) to crops of the original keyframe
+├── verify.py        evidence checks: quote in the source? does it answer the question?
 ├── evaluate.py      scoring retrieval against a question set
 ├── pipeline.py      prepare() and Asker: the flow shared by CLI and UI
 ├── app.py           Gradio web app

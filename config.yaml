@@ -53,4 +53,7 @@ answer:
   zoom_margin: 0.3        # look mode: margin around the model's box, as a fraction of its size per side
   zoom_min_px: 160        # look mode: smallest crop side in original pixels (smaller is mostly blur)
   zoom_skip_area: 0.5     # look mode: a box covering more than this share of the frame isn't zoomed
-  num_predict: 300
+  verify: true            # look mode: check quotes (in the source? answers the question?) before answering
+  quote_threshold: 0.7    # similarity 0-1 a quote needs to its source. On the test song, real lyrics scored
+                          # 0.82-1.0 through Whisper's misspellings, made-up lines 0.43-0.54
+  num_predict: 500        # output cap per model call. 300 cut off a Bengali answer mid-JSON

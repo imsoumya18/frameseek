@@ -79,13 +79,14 @@ def ask_question(url: str, question: str):
     a = res.answer
 
     t = a.timing
-    looked = "".join(f"  \n{s.kind} {fmt_time(s.moment.t)}: {'yes' if s.present else 'no'} · {s.seen}"
+    looked = "".join(f"  \n{s.kind} {fmt_time(s.moment.t)}: "
+                     + (s.check.status if s.check else 'yes' if s.present else 'no') + f" · {s.seen}"
                      for s in a.steps)
     md = (f"### {a.text}\n\n**Confidence:** {a.confidence}"
           + (f"  \n**Evidence:** {a.evidence}" if a.evidence else "")
           + (f"  \n**Moment:** {fmt_time(a.moment.t)}" if a.moment else "  \n*No moment answers this.*")
           + (f"\n\n**Looked at:**{looked}" if looked else "")
-          + f"\n\n<sub>search {res.search_ms:.0f} ms · {len(a.steps) or 1} model calls · read {t.prefill_tokens} tokens in "
+          + f"\n\n<sub>search {res.search_ms:.0f} ms · {len([st for st in a.steps if st.timing]) or 1} model calls · read {t.prefill_tokens} tokens in "
             f"{t.prefill_s:.1f}s · wrote {t.decode_tokens} in {t.decode_s:.1f}s · total {res.total_s:.1f}s</sub>")
     start = int(a.moment.t) if a.moment else int(a.candidates[0].t) if a.candidates else 0
     # The zoomed crop when there is one: that's what the answer was read from.

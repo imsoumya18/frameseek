@@ -682,6 +682,12 @@ def ask(
             mark = "[green]yes[/green]" if step.present else "[red]no[/red]"
             what = f"{step.kind} #{step.rank} {fmt_time(step.moment.t)} {step.moment.file[:-4]}"
             extra = f" [dim]crop {step.crop.name}[/dim]" if step.crop else ""
+            if step.kind == "check":
+                c = step.check
+                mark = {"verified": "[green]verified[/green]", "unverified": "[yellow]unverified[/yellow]"}.get(
+                    c.status, "[red]failed[/red]")
+                score = f" {c.quote_score:.2f}" if c.quote_score is not None else ""
+                extra = f" [dim]quote '{escape(step.quote[:40])}'{score} in {step.source}[/dim]"
             secs = f"{step.timing.total_s:.0f}s" if step.timing else ""
             log.print(f"  {what:32} {mark}  {escape(step.seen[:70])}{extra} [dim]{secs}[/dim]")
             status.update(f"{'Zooming' if step.kind == 'look' and step.present else 'Looking'}...")
@@ -720,7 +726,7 @@ def ask(
     if a.crop:
         log.print(f"[dim]Read from the zoomed crop: {a.crop}[/dim]")
     t = a.timing
-    calls = f"{len(a.steps)} model calls, " if a.steps else ""
+    calls = f"{len([st for st in a.steps if st.timing])} model calls, " if a.steps else ""
     log.print(f"[dim]search {res.search_ms:.0f} ms; {calls}read {t.prefill_tokens} tokens in "
               f"{t.prefill_s:.1f}s, wrote {t.decode_tokens} in {t.decode_s:.1f}s; total {res.total_s:.1f}s[/dim]")
 
@@ -761,7 +767,7 @@ def eval_cmd(
     if answer:
         table.add_column("answer")
     mode = mode or cfg.answer.mode
-    ranks, chose_right, abstained, seconds, calls, texts = [], 0, 0, [], [], []
+    ranks, chose_right, abstained, seconds, calls, texts, rejected, errors = [], 0, 0, [], [], [], 0, 0
     for it in items:
         frames, speech, scores = score_all(video_dir, it.q, asker.text, asker.image)
         moments = fuse(frames, speech, scores)
@@ -775,8 +781,10 @@ def eval_cmd(
                 with log.status(f"Answering ({mode}): {it.q}"):
                     a = asker.answer(video_dir, it.q, moments, mode)
                 seconds.append(a.timing.total_s)
-                calls.append(len(a.steps) or 1)
+                calls.append(len([st for st in a.steps if st.timing]) or 1)
+                rejected += sum(1 for st in a.steps if st.kind == "check" and not st.present)
             except OllamaError as e:   # one failed question shouldn't end a 20-minute run
+                errors += 1
                 row.append(f"[red]error[/red]: {escape(str(e)[:70])}")
                 table.add_row(*row)
                 continue
@@ -792,7 +800,10 @@ def eval_cmd(
             if ok is not None:
                 texts.append(ok)
                 verdict += " [green]text ok[/green]" if ok else f" [red]text should include {escape(', '.join(it.contains))}[/red]"
-            row.append(f"{verdict}: {escape(a.text[:70])}" + (f" [dim]({len(a.steps)} calls)[/dim]" if a.steps else ""))
+            fails = sum(1 for st in a.steps if st.kind == "check" and not st.present)
+            row.append(f"{verdict}: {escape(a.text[:70])}"
+                       + (f" [dim]({len([st for st in a.steps if st.timing])} calls"
+                          + (f", {fails} rejected by checks" if fails else "") + ")[/dim]" if a.steps else ""))
         table.add_row(*row)
     log.print(table)
     s = summarise(items, ranks, n)
@@ -801,6 +812,10 @@ def eval_cmd(
     if answer:
         log.print(f"[bold]{mode}: answering model picked the right moment {chose_right}/{s.n}[/bold], "
                   f"said none answers it {abstained}/{s.n}  [dim](check the answer text by eye)[/dim]")
+        answered = s.n - abstained - errors
+        log.print(f"[bold]answered {answered}/{s.n}: right moment {chose_right}, wrong {answered - chose_right}; "
+                  f"abstained {abstained}" + (f"; errors {errors}" if errors else "") + "[/bold]"
+                  + (f"  [dim](evidence checks rejected {rejected} candidate answers)[/dim]" if rejected else ""))
         if texts:
             log.print(f"[bold]exact answer text right {sum(texts)}/{len(texts)}[/bold] [dim](questions with `contains`)[/dim]")
         if seconds:

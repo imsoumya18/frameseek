@@ -30,6 +30,7 @@ class Moment:
     summary: str = ""
     caption_text: str = ""
     speech: str = ""                        # what was said around this time
+    screen_text: str = ""                   # on-screen text the captioner read, " | "-separated
     parts: dict[str, float] = field(default_factory=dict)  # each source's z-score, e.g. {"frames": 1.9}
     score: float = 0.0                      # sum of the parts
 
@@ -89,6 +90,7 @@ def fuse(frames: list[dict], speech: list[dict], scores: dict[str, np.ndarray]) 
     total = sum(parts.values()) if parts else np.zeros(n)
     moments = [
         Moment(t=f["t"], file=f["file"], summary=f.get("summary", ""), caption_text=f.get("text", ""),
+               screen_text=f.get("screen_text") or "",
                speech=speech[cover[j]]["text"] if cover[j] >= 0 else "",
                parts={k: float(v[j]) for k, v in parts.items()}, score=float(total[j]))
         for j, f in enumerate(frames)

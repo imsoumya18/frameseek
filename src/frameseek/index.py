@@ -95,7 +95,7 @@ def inputs_key(cfg: EmbedConfig, records: list[dict], transcript: Transcript | N
         "chunk_s": cfg.speech_chunk_s,
         "frames": [(r["file"], r["caption"]) for r in records],
         "speech": [(s.start, s.end, s.text) for s in transcript.segments] if transcript else None,
-        "version": 2,
+        "version": 3,   # 3: screen_text column (on-screen text kept apart, for checking quotes)
     }, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
@@ -122,6 +122,7 @@ def _write_tables(db_path: Path, frames: dict, speech: dict) -> None:
         "summary": pa.array(frames["summary"], pa.string()),
         "text": pa.array(frames["text"], pa.string()),
         "has_text": pa.array(frames["has_text"], pa.bool_()),
+        "screen_text": pa.array(frames["screen_text"], pa.string()),
         "img_vec": _vectors(frames["img_vec"]),
         "txt_vec": _vectors(frames["txt_vec"]),
     }), mode="overwrite")
@@ -196,6 +197,7 @@ def build_index(
                 "summary": [r["caption"]["summary"] for r in records],
                 "text": [caption_text(r["caption"]) for r in records],
                 "has_text": [has_content(r["caption"]) for r in records],
+                "screen_text": [" | ".join(r["caption"].get("text_on_screen") or []) for r in records],
                 "img_vec": img_vec, "txt_vec": txt_vec},
         speech={"start": [c["start"] for c in chunks], "end": [c["end"] for c in chunks],
                 "text": [c["text"] for c in chunks], "txt_vec": sp_vec},
@@ -215,7 +217,7 @@ def load_rows(video_dir: Path) -> tuple[list[dict], list[dict]]:
     db = lancedb.connect(str(video_dir / "index.lance"))
     names = _table_names(db)
     ft = db.open_table("frames").to_arrow()
-    cols = [c for c in ["file", "t", "shot", "summary", "text", "has_text"] if c in ft.schema.names]
+    cols = [c for c in ["file", "t", "shot", "summary", "text", "has_text", "screen_text"] if c in ft.schema.names]
     frames = ft.select(cols).to_pylist()
     speech = (db.open_table("speech").to_arrow().select(["start", "end", "text"]).to_pylist()
               if "speech" in names else [])
@@ -258,7 +260,7 @@ def score_all(video_dir: Path, question: str, text_emb, image_emb) -> tuple[list
     if st:
         scores["speech"] = unit(st, "txt_vec") @ q_txt
 
-    keep = ["file", "t", "shot", "summary", "text", "has_text"]
+    keep = ["file", "t", "shot", "summary", "text", "has_text", "screen_text"]
     frames = [{k: r[k] for k in keep if k in r} for r in ft]
     speech = [{k: r[k] for k in ("start", "end", "text")} for r in st]
     return frames, speech, scores

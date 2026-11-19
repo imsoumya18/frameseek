@@ -14,7 +14,7 @@ that implements them, so you can read along with the source.
 | 6 | [Embeddings and vector search](06-embeddings-and-search.md) | `index.py`, `models/embed.py` |
 | 7 | [Retrieval, answering and the UI](07-retrieval-and-answering.md) | `answer.py`, `pipeline.py`, `app.py` |
 | 8 | [Looking again: grounding, crop and zoom](08-look-again.md) | `look.py`, `zoom.py` |
-| 9 | Verify or abstain | |
+| 9 | [Verify or abstain](09-verify-or-abstain.md) | `verify.py`, `look.py` |
 | 10 | Benchmark and evaluation | |
 | 11 | Indian scripts and languages | |
 | 12 | Results and lessons | |

@@ -76,7 +76,9 @@ class AnswerConfig:
     zoom_margin: float = 0.3    # look mode: crop margin, as a fraction of the box's size on each side
     zoom_min_px: int = 160      # look mode: smallest crop side in original pixels
     zoom_skip_area: float = 0.5 # look mode: boxes bigger than this fraction of the frame aren't zoomed
-    num_predict: int = 300
+    verify: bool = True         # look mode: check quoted evidence before accepting an answer (Section 9)
+    quote_threshold: float = 0.7  # look mode: smallest quote-to-source similarity that counts as found
+    num_predict: int = 500       # output cap per call; Bengali text costs several tokens per word
 
 
 @dataclass

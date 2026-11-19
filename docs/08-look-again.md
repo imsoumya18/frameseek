@@ -151,6 +151,39 @@ The two misses fail in different places, and only one of them is about pixels:
   same blurry pixels, so the reference itself is unverified. The way to settle
   it is a 1080p frame.
 
+## The full test set: look vs compare
+
+`frameseek eval --answer` on the 21 questions, Qwen3-VL 8B. Compare is Chapter
+7's final run.
+
+| | Compare (top 3 at once) | Look (one at a time + zoom) |
+|---|---|---|
+| Right moment picked | 18/21 | **19/21** |
+| Said "none" | 1 | 0 |
+| Pink cap (ranked 4th) | none (never saw it) | **found** at 1:01 |
+| "আমি তো প্রেমিক" (ranked 6th) | invented an on-screen quote | **found** the lyric in the 6th moment |
+| Model time per question | ~65 s | **mean 50 s**, max 142 s (2.5 calls on average) |
+| Exact answer text (`contains`) | 2/3 by eye | 1/3 (title misread; T-shirt unverified) |
+
+Look mode sees further down the ranking and is faster on average, because most
+questions stop after one look and one zoom. It lost in two places:
+
+- **"end credits"** chose the opening title card. The model rejected the real
+  credits frame, then accepted the title card (a director credit) when looking
+  at it on its own. "End" is a position in the video, and a one-frame-at-a-time
+  check can't compare positions. Compare mode, seeing both, chose correctly.
+- **"when do they sing about the dhak?"** quoted 'ধরিগান খালিমা'. That garbled
+  line *is* in Whisper's transcript (2:35-2:55); the error is the claim that it is
+  about the dhak, which it isn't (ঢাকে appears in the next chunk). A real quote
+  used for a wrong claim needs a different check from a made-up quote: Chapter 9.
+
+The answer text also got worse: many answers just repeated the question ("man
+playing guitar", "শাড়ি পরা মেয়ে নাচছে"), and "where is the Durga idol?" became
+"it is seen here". The zoom answers from the crop alone, which has lost the
+setting. The zoom prompt now gets the full-frame answer as context, and both
+prompts say not to repeat the question (the same rule that fixed this in
+Chapter 7).
+
 ## Memory on a 16 GB machine
 
 During these runs, Safari (playing a YouTube video) froze for 30-40 seconds.

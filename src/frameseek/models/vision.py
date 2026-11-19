@@ -71,7 +71,7 @@ class VisionModel(Protocol):
         ...
 
     def structured(
-        self, image: Path | list[Path], prompt: str, schema: dict,
+        self, image: Path | list[Path] | None, prompt: str, schema: dict,
         max_side: int | None = None, num_predict: int = 400,
     ) -> tuple[dict, Timing]:
         """Return JSON that is guaranteed to match `schema`, plus timing. Accepts one image or several."""
@@ -220,20 +220,23 @@ class OllamaVision:
                     yield Done(_timing(chunk))
 
     def structured(
-        self, image: Path | list[Path], prompt: str, schema: dict,
+        self, image: Path | list[Path] | None, prompt: str, schema: dict,
         max_side: int | None = None, num_predict: int = 400,
     ) -> tuple[dict, Timing]:
         """Constrained decoding: Ollama only allows tokens that keep the output valid for `schema`.
 
         Several images can be sent in one message; they reach the model in order,
-        so a prompt can refer to them as image 1, image 2, ...
+        so a prompt can refer to them as image 1, image 2, ... With image=None the
+        call is text only: no ~1,240 image tokens, so it takes seconds.
         """
-        paths = image if isinstance(image, list) else [image]
+        paths = [] if image is None else image if isinstance(image, list) else [image]
         side = max_side or self.cfg.max_image_side
-        images = [encode_image(p, side)[0] for p in paths]
+        message: dict = {"role": "user", "content": prompt}
+        if paths:
+            message["images"] = [encode_image(p, side)[0] for p in paths]
         payload = {
             "model": self.cfg.model,
-            "messages": [{"role": "user", "content": prompt, "images": images}],
+            "messages": [message],
             "stream": False,
             "format": schema,                       # the JSON schema the output must follow
             "keep_alive": self.cfg.keep_alive,
