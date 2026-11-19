@@ -23,6 +23,7 @@ from frameseek.look import StepFn, look_again
 from frameseek.ingest import ingest, require_tools
 from frameseek.models.embed import ImageEmbedder, TextEmbedder
 from frameseek.models.vision import build_vision_model
+from frameseek.progress import EventFn, mmss
 from frameseek.shots import build_shots
 from frameseek.transcribe import build_transcript
 
@@ -36,35 +37,109 @@ class Prepared:
     video_dir: Path
 
 
-def prepare(url: str, cfg: Config, on_status: StatusFn = lambda _: None) -> Prepared:
-    """Run every indexing step that isn't cached yet."""
+def prepare(url: str, cfg: Config, on_status: StatusFn = lambda _: None,
+            on_event: EventFn = lambda *_: None) -> Prepared:
+    """Run every indexing step that isn't cached yet.
+
+    on_status gets one line per step (the CLI prints these); on_event gets
+    (step, state, fraction, detail) for the web app's checklist, with progress
+    inside each step where it's known.
+    """
     require_tools()
+
+    # 1. download
     on_status("Downloading video (or using the cached copy)")
-    meta, _ = ingest(url, cfg.data_dir, max_height=cfg.ingest.max_height)
+    on_event("download", "running", None, "checking for a cached copy")
+
+    def dl(ev: dict) -> None:
+        if ev.get("stage") == "download" and ev.get("total"):
+            mb, total = ev["done"] / 1e6, ev["total"] / 1e6
+            on_event("download", "running", ev["done"] / ev["total"],
+                     f"{ev.get('stream', 'video')}: {mb:.0f} of {total:.0f} MB")
+        elif ev.get("stage") in ("merge", "probe"):
+            on_event("download", "running", 1.0, "merging" if ev["stage"] == "merge" else "reading the file")
+
+    meta, cached = ingest(url, cfg.data_dir, max_height=cfg.ingest.max_height, on_progress=dl)
     video_dir = cfg.data_dir / meta.id
+    on_event("download", "done", 1.0, f"{mmss(meta.duration_s)} · {meta.height}p" + (" · cached" if cached else ""))
 
+    # 2. shots and keyframes
     on_status("Detecting shots")
-    shots, _ = build_shots(video_dir, meta.file, params=cfg.shots)
+    on_event("shots", "running", 0.0, "scanning for cuts")
 
+    def sh(ev: dict) -> None:
+        if ev.get("stage") == "detect" and ev.get("total"):
+            on_event("shots", "running", 0.8 * ev["done"] / ev["total"],
+                     f"scanning for cuts: {mmss(ev['done'])} of {mmss(ev['total'])}")
+        elif ev.get("stage") == "extract" and ev.get("total"):
+            on_event("shots", "running", 0.8 + 0.2 * ev["done"] / ev["total"],
+                     f"saving keyframe {ev['done']} of {ev['total']}")
+
+    shots, cached = build_shots(video_dir, meta.file, params=cfg.shots, on_progress=sh)
+    n = sum(len(s.keyframes) for s in shots)
+    on_event("shots", "done", 1.0, f"{len(shots)} shots · {n} keyframes" + (" · cached" if cached else ""))
+
+    # 3. speech
     on_status("Transcribing speech (minutes on first run)")
-    transcript, _ = build_transcript(video_dir, meta, cfg.transcribe, device_pref=cfg.device)
+    on_event("speech", "running", None, "looking for YouTube captions")
 
+    def sp(ev: dict) -> None:
+        stage = ev.get("stage")
+        if stage == "transcribe" and ev.get("total"):
+            on_event("speech", "running", min(ev["done"] / ev["total"], 1.0),
+                     f"Whisper: {mmss(ev['done'])} of {mmss(ev['total'])}")
+        elif stage == "load_model":
+            on_event("speech", "running", None, f"loading Whisper {ev.get('model', '')}")
+        elif stage in ("check_language", "language_check"):
+            on_event("speech", "running", None, "checking which language is spoken")
+
+    transcript, cached = build_transcript(video_dir, meta, cfg.transcribe, device_pref=cfg.device, on_progress=sp)
+    source = "YouTube captions" if transcript.source.startswith("youtube") else "Whisper"
+    on_event("speech", "done", 1.0, f"{source} · {transcript.language} · {len(transcript.segments)} lines"
+             + (" · cached" if cached else ""))
+
+    # 4. captions
     cap_model = cfg.caption.model or cfg.vision.model
     vm = build_vision_model(replace(cfg.vision, model=cap_model))
-    n = sum(len(s.keyframes) for s in shots)
     on_status(f"Captioning {n} keyframes with {cap_model} (about 20 s each on first run)")
-    result = caption_keyframes(
-        video_dir, shots, vm, cap_model, cfg.caption,
-        on_progress=lambda ev: on_status(f"Captioning keyframes: {ev['done']}/{ev['total']} new"),
-    )
+    on_event("captions", "running", None, f"loading {cap_model}")
+    started = time.perf_counter()
+
+    def cp(ev: dict) -> None:
+        on_status(f"Captioning keyframes: {ev['done']}/{ev['total']} new")
+        todo, done = ev["total"], ev["done"]
+        have = n - todo + done
+        per = (time.perf_counter() - started) / max(done, 1)
+        left = per * (todo - done)
+        on_event("captions", "running", have / n if n else None,
+                 f"{have} of {n} · about {mmss(left)} left" if done < todo else f"{have} of {n}")
+
+    result = caption_keyframes(video_dir, shots, vm, cap_model, cfg.caption, on_progress=cp)
     if cap_model != (cfg.answer.model or cfg.vision.model) and result.newly_done:
         vm.unload()   # don't keep the 4B in memory next to the 8B that answers questions
+    detail = f"{len(result.records)} of {n} keyframes"
+    if result.errors:
+        detail += f" · {result.errors} failed (Prepare again to retry)"
+    on_event("captions", "done", 1.0, detail)
 
+    # 5. search index
     on_status("Building the search index")
+    on_event("index", "running", None, "loading the search models")
+
+    def ix(ev: dict) -> None:
+        stage = ev.get("stage")
+        label = {"load": f"loading {ev.get('model', '')}", "embed_captions": "embedding frames and captions",
+                 "embed_speech": "embedding the speech", "write": "writing the index"}.get(stage)
+        if label:
+            on_event("index", "running", None, label)
+
     device = pick_device(cfg.device)
-    build_index(video_dir, result.records, transcript,
-                TextEmbedder(cfg.embed.text_model, device, cfg.embed.batch_size),
-                ImageEmbedder(cfg.embed.image_model, device, cfg.embed.batch_size), cfg.embed)
+    stats, cached = build_index(video_dir, result.records, transcript,
+                                TextEmbedder(cfg.embed.text_model, device, cfg.embed.batch_size),
+                                ImageEmbedder(cfg.embed.image_model, device, cfg.embed.batch_size), cfg.embed,
+                                on_progress=ix)
+    on_event("index", "done", 1.0, f"{stats.frames} frames · {stats.speech_chunks} speech chunks"
+             + (" · cached" if cached else ""))
     on_status("Ready")
     return Prepared(meta.id, meta.title, video_dir)
 

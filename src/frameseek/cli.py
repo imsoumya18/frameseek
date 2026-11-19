@@ -883,10 +883,11 @@ def prepare_cmd(
 @app.command()
 def ui(
     port: int = typer.Option(7860, "--port", help="Port for the local web app"),
+    quiet: bool = typer.Option(False, "--quiet", help="Don't log each step to this terminal"),
 ) -> None:
     """Open the web app: paste a link, prepare it, ask questions."""
     from frameseek.app import launch
-    launch(port=port)
+    launch(port=port, quiet=quiet)
 
 
 # ---------- describe ----------
