@@ -63,6 +63,27 @@ Note what else this shows: **every table always returns something.** For
 "something red", the speech table still returned a dhak lyric as its "best"
 match. Nearest is not the same as relevant; Chapter 7 deals with this.
 
+### On a real video
+
+Top result per source on the 4.8-minute Bengali music video (88 keyframes, 8 speech chunks):
+
+| Question | Captions | Frames | Speech |
+|---|---|---|---|
+| "man playing guitar" | guitar shots | same guitar shots | (nothing relevant) |
+| "guy in a pink cap" | miss: no caption mentions the cap | **the right frame, #1** | |
+| "Japanese text on a t-shirt" | **the right frame, #1** (text was captioned) | miss: cannot read text | |
+| "দুর্গা প্রতিমা" (Bengali: Durga idol) | "Durga idols" caption, #1 | **top 4 are all idol frames** | |
+| "ঢাক পেটাতে" (Bengali lyric) | noise | dance scenes | **the exact lyric line, #1** |
+
+The pink cap and the Japanese text are on **the same frame**, and each was found
+by a different source. Two further patterns:
+
+- A title card with Bengali on-screen text ranked high in caption search for every
+  Bengali question: the script-matching bias described below.
+- When a source has nothing relevant, its scores bunch together (0.785, 0.784,
+  0.784, 0.784, 0.783); a real match stands out from the rest. The **gap** between
+  the top result and the others signals whether a source found anything.
+
 ### Asymmetric retrieval: the e5 prefixes
 
 multilingual-e5 was trained with `query: ` on questions and `passage: ` on stored
@@ -122,7 +143,7 @@ walk can stop at a local best), extra memory, build time and update cost for
 large speed-ups. They matter from roughly hundreds of thousands of vectors, i.e.
 thousands of videos.
 
-frameseek uses exact search. LanceDB can add an ANN index later without changing
+Frameseek uses exact search. LanceDB can add an ANN index later without changing
 the search code.
 
 ## Storage

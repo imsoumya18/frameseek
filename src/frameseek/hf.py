@@ -1,8 +1,8 @@
-"""Quiet Hugging Face downloads so they don't fight frameseek's own progress display.
+"""Quiet Hugging Face downloads so they don't fight Frameseek's own progress display.
 
 huggingface_hub and transformers each draw tqdm progress bars. tqdm redraws a
 bar by returning to the start of the line, but rich's live display moves the
-cursor too, so every redraw lands on a new line: a wall of bars. frameseek turns
+cursor too, so every redraw lands on a new line: a wall of bars. Frameseek turns
 those bars off and shows one line of its own instead.
 """
 

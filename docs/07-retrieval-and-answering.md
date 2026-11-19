@@ -40,7 +40,7 @@ It failed on this video in two ways:
    visual lists agreeing on the wrong frames, and **0 of 4 lyric questions**
    found the right moment.
 
-### What frameseek uses: z-score fusion over the whole video
+### What Frameseek uses: z-score fusion over the whole video
 
 Score every keyframe with every source (exact search: 88 frames, or a few
 thousand for an hour-long video, is a millisecond of numpy), then turn each
@@ -113,7 +113,7 @@ word, plus a few seconds of decode.
 **The context window has to fit all of it.** Ollama gives a model 4,096 tokens
 of context unless told otherwise. 3 frames (~3,700) plus captions, Bengali
 lyrics (Bengali script costs several tokens per word) and the instructions came
-to 4,110 tokens on one test question, and Ollama refused it. frameseek sets
+to 4,110 tokens on one test question, and Ollama refused it. Frameseek sets
 `vision.num_ctx: 8192`. A bigger window costs memory for the KV cache (the
 model's notes on every token it has read so far, kept so each new word doesn't
 reread everything), about 0.6 GB more on the 8B (36 layers × 8 KV heads × 128
@@ -175,7 +175,7 @@ each with the keyframes or seconds that answer it, checked by eye.
 
 Out of 21. Weighting speech higher gains one question here and starts losing
 visual ones at ×2, so with only 21 questions on one video it would be tuning to
-the test set; frameseek keeps equal weights.
+the test set; Frameseek keeps equal weights.
 
 The three questions still missed show what retrieval alone cannot fix:
 
@@ -213,24 +213,31 @@ as evidence (expect transcript misspellings), don't say "moment 1" or repeat
 the question, and read on-screen text from the image. The model runs at
 temperature 0, so the second run differs only because of the prompt:
 
-| | Run 1 | Run 2 |
-|---|---|---|
-| Right moment picked | 17/21 | 16/21 |
-| "moment 1" / "first image" in answers | 6 | 0 |
-| Lyric question "ঢাক পেটাতে দুখান কাঠি" | declined | right |
-| "আমি তো প্রেমিক" (not in any of the 3 moments) | declined | **"The speech says 'আমি তো প্রেমিক'"**: invented |
-| "man in a grey t-shirt" | right | moment 0, while the answer describes him |
-| Title name (screen: সৃজিত) | সুজিত, copied from the caption | still সুজিত |
+| | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| Right moment picked | 17/21 | 16/21 | **18/21** (every retrieval hit) |
+| "moment 1" / "first image" in answers | 6 | 0 | 0 |
+| Lyric question "ঢাক পেটাতে দুখান কাঠি" | declined | right | right |
+| "আমি তো প্রেমিক" (not in any of the 3 moments) | declined | **"The speech says 'আমি তো প্রেমিক'"**: invented | **"The text on screen says 'আমি তো প্রেমিক'"**: invented |
+| "man in a grey t-shirt" | right | moment 0, while the answer describes him | right |
+| Title name (screen: সৃজিত) | সুজিত, copied from the caption | still সুজিত | still সুজিত |
 
 "Expect misspellings" was read as permission to match a lyric that wasn't
-there: a refusal turned into a confident false claim, which is worse. The rule
-now says the words must really be in that moment's text. Reading text from the
+there: a refusal turned into a confident false claim, which is worse. Run 3
+added "the words must really be in that moment's text; never claim something
+was said that is not written above". The speech claim went away, and the model
+claimed the title card said it instead. When a question quotes words that none
+of the moments contain, the 8B prefers to find them somewhere rather than
+answer "none". A prompt can move that error around but not remove it. Reading text from the
 image changed nothing: at full-frame resolution the 8B reads সৃ as সু too,
 which is a job for crop-and-zoom (Chapter 8).
 
-The lesson: a prompt fix for one question can break another, and only the
-whole test set shows it. A claim such as "the speech says X" can also be
-checked by code against the transcript, which is Chapter 9.
+The lessons: a prompt fix for one question can break another, and only the
+whole test set shows it; and some errors need a check outside the model. A
+claim such as "the text on screen says X" can be tested by code: is X in that
+moment's caption text or speech? That is Chapter 9 (verify or abstain), and
+this question is its first test case. Prompt tuning on these 21 questions
+stops here: more would fit the test set rather than improve the system.
 
 ## Shared pipeline, two front ends
 

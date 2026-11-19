@@ -45,7 +45,7 @@ To show the frame at 7.9 s, the decoder must start from the I-frame **before**
 Worked example: keyframes every 4 s at 30 fps. The last keyframe before 7.9 s is
 at 4.0 s, so ffmpeg decodes (7.9 − 4.0) × 30 ≈ **117 frames** to return one.
 
-That is why frameseek extracts one keyframe per shot (Chapter 3) rather than
+That is why Frameseek extracts one keyframe per shot (Chapter 3) rather than
 sampling arbitrary timestamps, and why the ffmpeg flag order matters:
 
 | | Command | Speed |
@@ -64,7 +64,7 @@ changes. This is adaptive streaming (DASH).
 
 So `yt-dlp` has to:
 
-1. **Pick** a video stream and an audio stream. frameseek asks for at most 720p,
+1. **Pick** a video stream and an audio stream. Frameseek asks for at most 720p,
    preferring H.264 video and m4a audio so the result is a plain `.mp4`.
 2. **Download** both.
 3. **Merge** them into one file with ffmpeg, which is why ffmpeg must be installed.
@@ -111,7 +111,7 @@ crashes halfway, the final file simply does not exist, and the next run retries
 cleanly instead of trusting a partial file.
 
 A step that can be safely re-run, skipping work already done, is called
-**idempotent**. Every indexing step in frameseek follows this pattern.
+**idempotent**. Every indexing step in Frameseek follows this pattern.
 
 ### What `meta.json` records
 

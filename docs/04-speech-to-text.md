@@ -10,13 +10,13 @@ Code: [`src/frameseek/transcribe.py`](../src/frameseek/transcribe.py)
 | YouTube auto captions | Decent in English, weaker for Indian languages and mixed speech | Most videos | Free, instant |
 | Local Whisper | Depends on model size and language | Every video | Minutes of compute |
 
-In `auto` mode frameseek uses manual captions if they exist. Auto captions are
+In `auto` mode Frameseek uses manual captions if they exist. Auto captions are
 used only after a check (below); otherwise Whisper. The choice and the reason are
 recorded in `transcript.json` (`source` and `note`).
 
 YouTube lists auto captions in dozens of languages, but all except one are
 machine translations. The track ending in `-orig` is the original speech
-recognition, so that is the one frameseek takes.
+recognition, so that is the one Frameseek takes.
 
 **That track is only as good as the uploader's language setting.** YouTube runs
 its recognizer in the language declared for the video, not one detected from the
@@ -28,7 +28,7 @@ produces Hindi words that merely sound like the Bengali lyrics:
 | দাঁত কপাটি | दांत कपाटी |
 | তোমাকে দেখে | तुम के देखे |
 
-So frameseek treats the auto-caption language as a claim, and checks it: a
+So Frameseek treats the auto-caption language as a claim, and checks it: a
 Whisper model detects the language from the audio itself (with VAD, so a music intro doesn't
 confuse it, voting across up to three 30-second windows). If Whisper is at least
 50% sure of a different language, the captions are discarded and Whisper
@@ -64,14 +64,14 @@ flowchart LR
 ## Segment vs word timestamps
 
 Whisper's default output gives one start and end per segment, often 5 to 25
-seconds long. To answer "when does she say *anjali*?", frameseek needs the time
+seconds long. To answer "when does she say *anjali*?", Frameseek needs the time
 of the word itself.
 
 Word timestamps come from the decoder's **cross-attention**: while writing each
 word, the decoder attends most strongly to the audio frames where that word was
 spoken. Aligning those peaks gives each word a start and end. faster-whisper does
 this with `word_timestamps=True`. YouTube's auto captions also carry per-word
-offsets (`tOffsetMs` in the json3 format), which frameseek keeps.
+offsets (`tOffsetMs` in the json3 format), which Frameseek keeps.
 
 ## Hallucinations on music and silence
 
@@ -110,7 +110,7 @@ Times exclude the one-time model download and load. Three lessons:
 
 ## Two models: one to detect the language, one to transcribe
 
-So frameseek splits the job:
+So Frameseek splits the job:
 
 ```mermaid
 flowchart LR
@@ -139,7 +139,7 @@ best; `beam_size: 1` (greedy) is faster and slightly less accurate.
 ## Devices: not every library supports every GPU
 
 faster-whisper runs on CTranslate2, which supports CUDA and CPU. Version 4.9
-added an **experimental** MPS backend for Apple Silicon. frameseek never picks it
+added an **experimental** MPS backend for Apple Silicon. Frameseek never picks it
 automatically; set `transcribe.device: mps` (or `--device mps`) to try it and
 compare speed against CPU.
 

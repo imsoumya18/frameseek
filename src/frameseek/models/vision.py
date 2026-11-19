@@ -1,6 +1,6 @@
 """Vision-language model interface and the Ollama implementation.
 
-Every other part of frameseek depends on the VisionModel interface, never on
+Every other part of Frameseek depends on the VisionModel interface, never on
 Ollama directly. Adding another backend means writing one new class and one
 new branch in build_vision_model().
 

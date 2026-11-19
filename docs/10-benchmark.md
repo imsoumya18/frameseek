@@ -3,7 +3,7 @@
 Code: [`evaluate.py`](../src/frameseek/evaluate.py), `frameseek eval`;
 question sets in [`evals/`](../evals), per-question results in [`evals/results/`](../evals/results)
 
-Chapters 7-9 tuned frameseek on one 4.8-minute Bengali music video and 21
+Chapters 7-9 tuned Frameseek on one 4.8-minute Bengali music video and 21
 questions. This chapter checks whether the results hold on different videos.
 
 ## The videos
@@ -67,7 +67,7 @@ The music video, with no subtitles and garbled lyrics, is the more honest test.
 | Hindi commentary | 18 | 15 | **0** | 3 | 2/2 | 6/7 | 127 s |
 | **All** | **55** | **43** | **1** | **11** | **4/4** | **13/15** | |
 
-- **When frameseek answers, it is right 43 times out of 44 (98%).** It answers
+- **When Frameseek answers, it is right 43 times out of 44 (98%).** It answers
   44 of the 55 answerable questions (80% coverage).
 - **All four things that aren't in the videos were declined** ("a cat on a
   sofa", "a dog", "a cricket match", "someone on a bicycle"), even though search

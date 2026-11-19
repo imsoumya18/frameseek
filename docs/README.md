@@ -1,6 +1,6 @@
-# frameseek learning notes
+# Frameseek learning notes
 
-These notes explain the concepts behind each part of frameseek, in the order the
+These notes explain the concepts behind each part of Frameseek, in the order the
 project was built. Each chapter covers the ideas first, then points to the code
 that implements them, so you can read along with the source.
 

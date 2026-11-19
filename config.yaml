@@ -1,4 +1,4 @@
-# Which models frameseek uses and where they run.
+# Which models Frameseek uses and where they run.
 # Change a line here to swap a model; no code changes needed.
 
 data_dir: data            # per-video cache lives in data/<video_id>/

@@ -155,7 +155,7 @@ _GITHUB_MARK = ('<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 
 
 def _header() -> str:
     """App name on the left; who made it and the source code on the right."""
-    return (f'<div class="fs-top"><span><b>frameseek</b> · ask anything said or shown in a video</span>'
+    return (f'<div class="fs-top"><span><b>Frameseek</b> · ask anything said or shown in a video</span>'
             f'<span class="by"><a href="{AUTHOR[1]}" target="_blank" rel="noopener">Developed by '
             f'<b>{AUTHOR[0]}</b></a><a href="{REPO}" target="_blank" rel="noopener">{_GITHUB_MARK}'
             f'Source on GitHub</a></span></div>')
@@ -391,7 +391,7 @@ def warm_up() -> None:
 def build():
     import gradio as gr
 
-    with gr.Blocks(title="frameseek", fill_width=True) as demo:
+    with gr.Blocks(title="Frameseek", fill_width=True) as demo:
         gr.HTML(_header(), padding=False)
         with gr.Row(equal_height=False):
             with gr.Column(scale=5, min_width=380):

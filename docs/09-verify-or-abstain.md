@@ -3,7 +3,7 @@
 Code: [`verify.py`](../src/frameseek/verify.py), the checks inside [`look.py`](../src/frameseek/look.py)
 
 A wrong answer costs more than "I can't tell": the user acts on it. This chapter
-makes frameseek check the evidence behind an answer and, when the check fails,
+makes Frameseek check the evidence behind an answer and, when the check fails,
 keep looking or say it can't tell.
 
 ## Two ways an answer can be ungrounded
@@ -140,6 +140,31 @@ What changed, question by question:
 Abstaining is the expensive path: checking all six moments plus failed checks
 took up to 239 s, against ~25 s for an answer found and verified on the first
 look.
+
+### Second run, after those fixes
+
+| | Look, no checks (Ch. 8) | Checks, run 1 | **Checks, run 2** |
+|---|---|---|---|
+| Right moment | 19 | 17 | **18** |
+| Wrong moment | 2 | 1 | **1** |
+| Can't tell | 0 | 2 | **2** |
+| Errors | 0 | 1 | **0** |
+| Accuracy when it answers | 19/21 = 90% | 17/18 = 94% | **18/19 = 95%** |
+| Model time per question | 50 s | 80 s | 88 s (3.7 calls) |
+
+- The Bengali Durga question is right again (no cut-off at 500 tokens).
+- All 13 visual questions stayed right: check 2 on descriptions rejected none
+  of them.
+- **"এবার পুজোতে তোমার সাথে" is still wrong**, and this time check 2 passed it.
+  The question is a bare lyric line, not a question, and the judge accepted "a
+  couple dancing at a puja" as answering "this puja, with you". A relevance
+  check can't help when the question itself is ambiguous. Knowing that a bare
+  Bengali line is probably a lyric to search for in the speech is query
+  understanding: Chapters 10 and 11.
+
+The trade: the two answers that were wrong without checks became "can't tell",
+one new wrong answer appeared and stayed, and each question costs about 38 s
+more. When Frameseek answers, it is right 95% of the time instead of 90%.
 
 One wording problem the checks can't see: "the phrase 'ঢাক পেটাতে দুখান কাঠি' is
 spoken by a group of people on a porch". The moment is right, but in a music

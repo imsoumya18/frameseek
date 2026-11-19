@@ -2,7 +2,7 @@
 
 ## Two phases: indexing and asking
 
-frameseek splits its work into two phases with very different requirements.
+Frameseek splits its work into two phases with very different requirements.
 
 | | Indexing | Asking |
 |---|---|---|
@@ -30,7 +30,7 @@ indexing so that answering stays fast.
 
 ## Where models run: a server or inside our process
 
-frameseek uses two styles of running models.
+Frameseek uses two styles of running models.
 
 | | Separate server (Ollama for the vision model) | Inside our process (faster-whisper, SigLIP2) |
 |---|---|---|
@@ -93,7 +93,7 @@ Two practical consequences:
 2. **Answer length drives decode.** Short, structured captions are much cheaper
    than long descriptions.
 
-This is why frameseek indexes frames at low resolution with short captions, and
+This is why Frameseek indexes frames at low resolution with short captions, and
 only spends high-resolution compute on the few frames a question actually needs.
 
 `keep_alive` in `config.yaml` controls how long Ollama keeps the model loaded

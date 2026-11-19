@@ -43,14 +43,14 @@ No threshold catches every real cut with zero false alarms. That is the
 **precision / recall trade-off**: precision is "of the cuts I reported, how many
 were real", recall is "of the real cuts, how many did I report".
 
-For frameseek the two kinds of error cost very different amounts:
+For Frameseek the two kinds of error cost very different amounts:
 
 | Mistake | Cost |
 |---|---|
 | False alarm (extra cut) | One extra keyframe to caption (a few seconds of compute) and a near-duplicate in the index. Harmless. |
-| Missed cut | Two different shots share one keyframe, so one of them is invisible to search. If the answer is only in that shot, frameseek can never find it. |
+| Missed cut | Two different shots share one keyframe, so one of them is invisible to search. If the answer is only in that shot, Frameseek can never find it. |
 
-So frameseek tunes for **recall** and accepts a few extra keyframes.
+So Frameseek tunes for **recall** and accepts a few extra keyframes.
 
 ## Choosing keyframes
 
@@ -109,4 +109,4 @@ frame that clearly mixes two scenes (a missed dissolve).
 2. A 90-second single take moves from the pandal entrance to the idol to the
    crowd. With one middle keyframe per shot, which question could never be
    answered, and what fixes it?
-3. Why does frameseek prefer extra cuts over missed ones?
+3. Why does Frameseek prefer extra cuts over missed ones?

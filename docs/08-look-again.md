@@ -199,7 +199,7 @@ Roughly what was in memory:
 
 That is at or past 16 GB. macOS then compresses and swaps memory, and every
 app stalls while it does. The slowest moment is loading the 8B (the first look
-took 50 s instead of ~21 s). frameseek now unloads the captioning model after
+took 50 s instead of ~21 s). Frameseek now unloads the captioning model after
 captioning when a different model answers questions (`OllamaVision.unload`:
 `keep_alive: 0`), so the 4B and the 8B are not held side by side.
 `ollama ps` shows what is loaded right now.

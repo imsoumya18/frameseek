@@ -47,7 +47,7 @@ Three lessons from this one table:
 
 1. **The token count never changed.** Ollama resizes every image to its own
    target size for this model, upscaling small ones. Downscaling before sending
-   saves nothing and throws detail away, so frameseek sends full-size keyframes.
+   saves nothing and throws detail away, so Frameseek sends full-size keyframes.
 2. **Benchmarks can measure caches instead of work.** The first row's warm-up
    used the same image and prompt, so Ollama reused its cached prefill. Ollama
    also keeps cached work across requests, so a later run on the same image hit
@@ -91,7 +91,7 @@ translating it would lose information.
 ## Constrained decoding: JSON that always parses
 
 Writing "respond in JSON" in the prompt is a request; most outputs comply, a few
-do not. frameseek instead passes the JSON schema to Ollama (`format`), which uses
+do not. Frameseek instead passes the JSON schema to Ollama (`format`), which uses
 **constrained decoding**:
 
 > At every decoding step, before a token is chosen, every token that would make
@@ -126,6 +126,19 @@ Measured on the same keyframe, with the shorter caption format:
 The 4B decodes almost twice as fast because decode is limited by memory bandwidth
 and it has about half the weights to read per token. One frame is not a quality
 benchmark (Chapter 10 does that), but it is enough to choose the 4B for indexing.
+
+### The full run
+
+All 88 keyframes with the 4B: **18.2 s per frame on average** (1,240 input tokens,
+104 output tokens), 27 minutes in total, no errors. The benchmark predicted
+13.4 s; the gap is thermal throttling on a fanless laptop under sustained load.
+Indexing happens once per video, so this is acceptable, but benchmark numbers
+from a cool machine are optimistic for long jobs.
+
+On-screen Bengali text was read well, with character-level slips on similar
+glyphs: সৃজিত read as সুজিত (missing vowel sign), খোশমেজাজে as থেশামেজাজে
+(খ and থ confused), INFRA as "INFR A". These are kept as test cases for Indian-script
+OCR in Chapter 11.
 
 The second lever mirrors the speech step: a cheaper model does the bulk work
 (Whisper `small` for language ID, a 4B VLM for indexing) and a stronger model is

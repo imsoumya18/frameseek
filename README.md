@@ -1,6 +1,6 @@
 <div align="center">
 
-# frameseek
+# Frameseek
 
 **Ask anything about a YouTube video, whether it was *said* or only *shown*.**<br>
 Get the answer with the moment it happens and the frame it was read from, or an honest "can't tell".
@@ -19,25 +19,25 @@ Runs on your own laptop with open-source models.
 
 [Quickstart](#quickstart) · [How it works](#how-it-works) · [Benchmark](#benchmark) · [Docs](docs/README.md) · [Roadmap](#roadmap)
 
-<img src="docs/assets/demo.gif" alt="frameseek demo: paste a YouTube link, watch it prepare, ask a question, get the answer with the moment and the zoomed-in evidence" width="900">
+<img src="docs/assets/demo.gif" alt="Frameseek demo: paste a YouTube link, watch it prepare, ask a question, get the answer with the moment and the zoomed-in evidence" width="900">
 
 </div>
 
 ---
 
-## Why frameseek?
+## Why Frameseek?
 
 Most "chat with a video" tools search the **transcript**, so they only know what someone *said*.
 Ask about what's *on screen* (a colour, a sign, an object, who's in the shot) and they guess.
 
-frameseek looks at the frames too. It searches captions, frame pixels and speech together, then
+Frameseek looks at the frames too. It searches captions, frame pixels and speech together, then
 **looks at the likely moments one at a time, zooms in, and checks its own evidence** before it answers.
 When the evidence doesn't hold up, it says "can't tell" rather than make something up.
 
 ## Features
 
 - 🎯 **Said *or* shown.** Answers from speech, on-screen text and the picture itself, fused into one ranked list of moments.
-- 🔍 **Looks again, then zooms.** The vision model points to where the answer is (a grounding box), and frameseek crops the full-resolution frame and asks again to confirm.
+- 🔍 **Looks again, then zooms.** The vision model points to where the answer is (a grounding box), and Frameseek crops the full-resolution frame and asks again to confirm.
 - ✅ **Checks its evidence or abstains.** A quoted line must really be in the transcript or on screen and must answer the question; otherwise it keeps looking, then says "can't tell".
 - ⏱️ **Answers with proof.** Every answer comes with its timestamp, the evidence crop, and a player that starts at that moment.
 - 🔒 **Fully local.** Qwen3-VL through Ollama, Whisper, SigLIP2 and multilingual-e5 all run on your machine. No API keys, and nothing is uploaded.
@@ -282,6 +282,6 @@ The demo uses the short film [*"hitched"*](https://www.youtube.com/watch?v=r11Lr
 
 <div align="center">
 
-Developed by **[Soumya](https://github.com/imsoumya18)** · If frameseek is useful to you, a ⭐ helps others find it.
+Developed by **[Soumya](https://github.com/imsoumya18)** · If Frameseek is useful to you, a ⭐ helps others find it.
 
 </div>
