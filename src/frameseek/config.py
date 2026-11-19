@@ -56,7 +56,7 @@ class TranscribeConfig:
 class CaptionConfig:
     model: str = ""              # model for indexing captions; empty = use vision.model
     max_image_side: int = 1024   # Ollama resizes images itself; sending less only loses detail
-    num_predict: int = 300       # hard cap on output tokens per frame
+    num_predict: int = 600       # output cap per frame; a news screenshot's text needed more than 300
 
 
 @dataclass

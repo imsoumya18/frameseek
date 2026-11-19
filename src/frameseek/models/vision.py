@@ -243,18 +243,28 @@ class OllamaVision:
             # num_ctx is the same on every call: a different value makes Ollama reload the model
             "options": {"temperature": 0, "num_predict": num_predict, "num_ctx": self.cfg.num_ctx},
         }
-        resp = self.client.post("/api/chat", json=payload)
-        if resp.status_code != 200:
-            hint = (" Raise vision.num_ctx in config.yaml, or lower answer.top_n."
-                    if "context size" in resp.text else "")
-            raise OllamaError(f"Ollama returned {resp.status_code}: {resp.text[:300]}{hint}")
-        data = resp.json()
-        content = data["message"]["content"]
-        try:
-            return json.loads(content), _timing(data)
-        except json.JSONDecodeError as exc:
-            # Only possible if generation hit num_predict before the JSON closed.
-            raise OllamaError(f"Output was cut off before the JSON finished: {content[:200]}") from exc
+        # Temperature 0 is deterministic, so a call that loops (the same characters
+        # repeated inside a string until num_predict runs out) loops the same way every
+        # time. One retry with a little randomness usually breaks the loop.
+        for attempt, temperature in enumerate((0.0, 0.4)):
+            payload["options"]["temperature"] = temperature
+            resp = self.client.post("/api/chat", json=payload)
+            if resp.status_code != 200:
+                hint = (" Raise vision.num_ctx in config.yaml, or lower answer.top_n."
+                        if "context size" in resp.text else "")
+                raise OllamaError(f"Ollama returned {resp.status_code}: {resp.text[:300]}{hint}")
+            data = resp.json()
+            content = data["message"]["content"]
+            try:
+                return json.loads(content), _timing(data)
+            except json.JSONDecodeError as exc:
+                # Only possible if generation hit num_predict before the JSON closed.
+                if attempt == 1:
+                    raise OllamaError(
+                        f"Output was cut off before the JSON finished ({len(content)} characters; "
+                        f"twice, at temperature 0 and 0.4): {content[:150]} ... {content[-60:]!r}"
+                    ) from exc
+        raise AssertionError("unreachable")
 
     def describe(self, image: Path, prompt: str) -> str:
         return "".join(e.text for e in self.stream(image, prompt) if isinstance(e, Token)).strip()

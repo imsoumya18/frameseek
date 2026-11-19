@@ -46,7 +46,8 @@ Expensive work happens once at indexing time, so answering stays fast.
 | Index | Caption, frame-pixel and speech embeddings in a local vector database (LanceDB) | Done |
 | Search + answer | Fuses the three sources into ranked moments; a vision model reads the top frames and answers with the moment and evidence | Done |
 | Look again | Checks moments one at a time, asks the model where the answer is (a box), zooms into it and confirms | Done |
-| Verify or abstain | Quoted speech or on-screen text must be in the source and must answer the question; otherwise keep looking, then "can't tell" | Built, measuring |
+| Verify or abstain | Quoted speech or on-screen text must be in the source and must answer the question; otherwise keep looking, then "can't tell" | Done |
+| Benchmark | Hand-checked question sets for three videos (Bengali, English, Hindi), including things that aren't in the video | Done (first round) |
 
 ## Try it
 
@@ -74,7 +75,10 @@ uv run frameseek doctor          # checks ffmpeg, device and the vision model
 ### Commands available today
 
 ```bash
-# Download a video once (any YouTube URL form works; re-runs are instant)
+# Prepare one or more videos in one go: download, shots, speech, captions, index
+uv run frameseek prepare "https://youtu.be/<video_id>" "https://youtu.be/<another_id>"
+
+# Or step by step. Download a video once (any YouTube URL form works; re-runs are instant)
 uv run frameseek ingest "https://youtu.be/<video_id>"
 
 # Split it into shots and extract keyframes (runs ingest first if needed)
@@ -138,6 +142,8 @@ On a MacBook Air (16 GB), with a 4.8-minute music video:
 | Retrieval, 21 test questions | Right moment in the top 3 for 18/21 (z-score fusion), up from 15/21 with rank fusion; lyric questions 2/4 |
 | Answering, 21 test questions | 8B picked a right moment for 18/21 (every retrieval hit); one invented quote remains, the first test case for verification (Chapter 9) |
 | Look again, 21 test questions | Right moment 19/21 (compare mode: 18/21), including the pink cap ranked 4th; mean 50 s per question |
+| Verify or abstain, 21 test questions | Answered 19: 18 right, 1 wrong (95% when it answers, up from 90%); 2 "can't tell" that were wrong answers before; mean 88 s per question |
+| Benchmark, 3 videos, 59 questions | Right 43, wrong 1, can't tell 11 of 55 answerable (98% right when it answers, 80% answered); declined all 4 things not in the videos; 88-161 s per question |
 | Answering, 3 test questions (v0) | 1 right, 1 correct refusal, 1 wrong (small text unreadable); ~65 s per question with the 8B reading 3 frames |
 | Speech, Bengali song | YouTube captions came out in Hindi (wrong uploader tag). Whisper `small` detects Bengali, `large-v3-turbo` transcribes it in Bengali script (~144 s) |
 
@@ -176,6 +182,7 @@ the order they were built, with diagrams and self-check questions:
 - [Retrieval and answering](docs/07-retrieval-and-answering.md): z-score fusion (and why rank fusion failed), retrieve-then-rerank, answering from evidence, measuring retrieval
 - [Looking again](docs/08-look-again.md): token budgets, grounding boxes, crop and zoom, a one-frame-at-a-time loop with early stop
 - [Verify or abstain](docs/09-verify-or-abstain.md): made-up evidence vs unsupported claims, fuzzy quote checks, risk vs coverage
+- [Benchmark](docs/10-benchmark.md): three videos in three languages, absent-thing questions, what the numbers do and don't show
 
 See the [docs index](docs/README.md) for all chapters.
 
@@ -189,8 +196,8 @@ See the [docs index](docs/README.md) for all chapters.
 - [x] 6. Embeddings and vector search
 - [x] 7. Search, answering and a web UI (first end-to-end demo)
 - [x] 8. Looking again: zooming into frames and locating objects
-- [ ] 9. Verifying answers, or saying "can't tell"
-- [ ] 10. Benchmark against transcript-only search and hosted models
+- [x] 9. Verifying answers, or saying "can't tell"
+- [x] 10. Benchmark on three videos in three languages
 - [ ] 11. Indian scripts and languages
 - [ ] 12. Results write-up
 

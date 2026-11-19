@@ -1,0 +1,29 @@
+# Retrieval and answer test set for https://youtu.be/5qbVFbjAj1c
+# (Naman Sharma on Sonia Gandhi's book "Belonging", Hindi, 15:32, Hinglish burned-in subtitles,
+# Devanagari graphics). Every answer was checked against the keyframes and the transcript
+# (Whisper large-v3-turbo; YouTube's auto captions were in the wrong language).
+#   frames / spans / contains / absent: as in nRWZBq2hcls.yaml
+# The screen and the speech disagree in places because of Whisper errors: the graphics say
+# 55 errors and 1921, the transcript says 75 and 1931. The `contains` values follow the screen.
+video: 5qbVFbjAj1c
+questions:
+  - {q: "what year does the book give for the founding of the RSS?", kind: text, contains: ["1921"], frames: [kf_0052_00], spans: [[305, 312]]}
+  - {q: "when was the RSS actually founded?", kind: text, contains: ["1925"], frames: [kf_0052_00], spans: [[311, 316]]}
+  - {q: "when did Ahmed Patel actually die?", kind: text, contains: ["2020"], frames: [kf_0061_00], spans: [[347, 358]]}
+  - {q: "how many NDA seats in 2014 does the book claim?", kind: text, contains: ["353"], frames: [kf_0071_00]}
+  - {q: "how many errors did India Today find in the book?", kind: text, contains: ["55"], frames: [kf_0050_00, kf_0049_00], spans: [[296, 304]]}
+  - {q: "who wrote The Accidental Prime Minister?", kind: text, contains: [Baru], frames: [kf_0123_00]}
+  - {q: "which newspaper reported that Sonia Gandhi refused the PM post?", kind: text, contains: [Deccan Herald], frames: [kf_0112_00]}
+  - {q: "photo of Giorgia Meloni", kind: visual, frames: [kf_0021_00]}
+  - {q: "photo of Manmohan Singh", kind: visual, frames: [kf_0044_00, kf_0115_00]}
+  - {q: "photo of Indira Gandhi", kind: visual, frames: [kf_0092_00]}
+  - {q: "photo of Pranab Mukherjee", kind: visual, frames: [kf_0124_00]}
+  - {q: "Rahul Gandhi in a white shirt sitting on a sofa", kind: visual, frames: [kf_0030_00]}
+  - {q: "the cover of the book Belonging", kind: visual, frames: [kf_0009_00, kf_0011_00, kf_0086_00, kf_0003_00, kf_0026_00, kf_0049_00]}
+  - {q: "photo of Sonia Gandhi", kind: visual, frames: [kf_0040_00, kf_0129_00, kf_0014_00, kf_0112_00]}
+  - {q: "किताब में आरएसएस की स्थापना का साल क्या बताया गया?", kind: text-hi, contains: ["1921"], frames: [kf_0052_00], spans: [[305, 312]]}
+  - {q: "मनमोहन सिंह की तस्वीर", kind: visual-hi, frames: [kf_0044_00, kf_0115_00]}
+  - {q: "when does he talk about Rajya Sabha members being nominated by the President?", kind: speech, frames: [kf_0064_00], spans: [[372, 380]]}
+  - {q: "डॉक्टर केशव बलीराम हेडगेवार", kind: speech-hi, frames: [kf_0053_00], spans: [[316, 321]]}
+  - {q: "a cricket match", kind: absent, absent: true}
+  - {q: "a dog", kind: absent, absent: true}

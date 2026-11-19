@@ -1,0 +1,27 @@
+# Retrieval and answer test set for https://youtu.be/PGUdWfB8nLg
+# (Obama's 2009 back-to-school speech set to stock footage, English, 11:09, burned-in subtitles).
+# Every answer was checked against the keyframes and the transcript (YouTube auto captions).
+#   frames: keyframes that show the answer      spans: [start, end] seconds where it is said
+#   contains: strings the answer text must include      absent: not in the video; the right answer is "none"
+# Note the three spellings of one name: the book cover says J.K. ROWLING, the burned-in
+# subtitle says "J K Rawlings", the auto captions say "Rollins".
+video: PGUdWfB8nLg
+questions:
+  - {q: "Michael Jordan in a Chicago Bulls jersey", kind: visual, frames: [kf_0086_00, kf_0087_00, kf_0088_00, kf_0091_00, kf_0092_00, kf_0093_00]}
+  - {q: "graduates throwing their caps in the air", kind: visual, frames: [kf_0134_00, kf_0135_00]}
+  - {q: "what is written on the backdrop behind Obama at the podium?", kind: text, contains: [education], frames: [kf_0002_00, kf_0002_01, kf_0021_00, kf_0043_00, kf_0057_00, kf_0057_01, kf_0065_00, kf_0065_01, kf_0075_00, kf_0075_01, kf_0081_00, kf_0081_01, kf_0094_00, kf_0101_00, kf_0101_01, kf_0106_00]}
+  - {q: "old black and white photo of a young boy", kind: visual, frames: [kf_0000_01, kf_0001_00, kf_0001_01]}
+  - {q: "an old basketball team photo", kind: visual, frames: [kf_0006_00]}
+  - {q: "someone writing area formulas on a chalkboard", kind: visual, frames: [kf_0052_00]}
+  - {q: "how many times was the first Harry Potter book rejected?", kind: text, contains: ["12"], frames: [kf_0084_00], spans: [[427, 437]]}
+  - {q: "who wrote Harry Potter?", kind: text, contains: [Rowling], frames: [kf_0082_00, kf_0083_00, kf_0084_00], spans: [[424, 434]]}
+  - {q: "an American flag waving against the sky", kind: visual, frames: [kf_0046_00, kf_0115_00, kf_0116_00]}
+  - {q: "Obama wearing a tuxedo", kind: visual, frames: [kf_0015_00]}
+  - {q: "a hand holding a stack of banknotes", kind: visual, frames: [kf_0062_00]}
+  - {q: "students sitting on the grass with books", kind: visual, frames: [kf_0069_00]}
+  - {q: "when does he talk about his father leaving the family?", kind: speech, frames: [kf_0003_00, kf_0004_00], spans: [[45, 50]]}
+  - {q: "which companies does he say were founded by students?", kind: speech, contains: [Google], frames: [kf_0121_00], spans: [[591, 596]]}
+  - {q: "what did Michael Jordan once say about failing?", kind: speech, contains: [failed], frames: [kf_0089_00, kf_0090_00], spans: [[443, 454]]}
+  - {q: "when does he mention his wife Michelle?", kind: speech, frames: [kf_0021_00], spans: [[87, 93]]}
+  - {q: "a cat sitting on a sofa", kind: absent, absent: true}
+  - {q: "someone riding a bicycle", kind: absent, absent: true}

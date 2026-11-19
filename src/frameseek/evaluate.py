@@ -4,6 +4,10 @@ Questions with an exact expected answer (on-screen text, a name) also list
 `contains`: the answer text must include those strings, so a misread such as
 সুজিত for সৃজিত counts as wrong without reading every answer by eye.
 
+Questions marked `absent: true` ask about something that isn't in the video:
+the right answer is "not found" / "can't tell". They have no retrieval rank and
+count as wrong if the model answers them anyway.
+
 A question is a hit at rank r when the r-th moment shows the answer (one of
 the listed keyframes) or is playing the speech that contains it (its speech
 chunk overlaps a listed span by at least a second).
@@ -27,12 +31,14 @@ class Item:
     frames: set[str]
     spans: list[tuple[float, float]]
     contains: list[str] = field(default_factory=list)   # the answer text must include all of these
+    absent: bool = False   # not in the video: the right answer is to say so
 
 
 def load_eval(path: Path) -> tuple[str, list[Item]]:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     items = [Item(d["q"], d.get("kind", ""), set(d.get("frames", [])),
-                  [tuple(s) for s in d.get("spans", [])], list(d.get("contains", []))) for d in data["questions"]]
+                  [tuple(s) for s in d.get("spans", [])], list(d.get("contains", [])), bool(d.get("absent", False)))
+             for d in data["questions"]]
     return data["video"], items
 
 
@@ -68,6 +74,9 @@ class Summary:
 
 
 def summarise(items: list[Item], ranks: list[int | None], top_n: int) -> Summary:
+    """Retrieval scores over the questions whose answer is in the video (absent ones have no rank)."""
+    pairs = [(it, r) for it, r in zip(items, ranks) if not it.absent]
+    items, ranks = [it for it, _ in pairs], [r for _, r in pairs]
     by_kind: dict[str, tuple[int, int]] = {}
     for it, r in zip(items, ranks):
         ok, total = by_kind.get(it.kind, (0, 0))
@@ -79,3 +88,35 @@ def summarise(items: list[Item], ranks: list[int | None], top_n: int) -> Summary
         mrr=sum(1 / r for r in ranks if r) / max(len(items), 1),
         by_kind=by_kind,
     )
+
+
+def outcome(answered_moment: object, hit: bool, item: Item) -> str:
+    """right / wrong / abstained for a present item; abstained_ok / false_answer for an absent one."""
+    if item.absent:
+        return "abstained_ok" if answered_moment is None else "false_answer"
+    if answered_moment is None:
+        return "abstained"
+    return "right" if hit else "wrong"
+
+
+@dataclass
+class AnswerSummary:
+    right: int
+    wrong: int
+    abstained: int
+    errors: int
+    absent_ok: int
+    false_answers: int
+
+    @property
+    def answered(self) -> int:
+        return self.right + self.wrong + self.false_answers
+
+    @property
+    def accuracy_when_answering(self) -> float:
+        return self.right / self.answered if self.answered else 0.0
+
+
+def summarise_answers(outcomes: list[str]) -> AnswerSummary:
+    c = {k: outcomes.count(k) for k in ("right", "wrong", "abstained", "error", "abstained_ok", "false_answer")}
+    return AnswerSummary(c["right"], c["wrong"], c["abstained"], c["error"], c["abstained_ok"], c["false_answer"])

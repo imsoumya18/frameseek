@@ -737,10 +737,12 @@ def eval_cmd(
     file: Path = typer.Option(None, "--file", help="Question set; default evals/<video_id>.yaml"),
     answer: bool = typer.Option(False, "--answer", help="Also run the answering model on every question (slow)"),
     mode: str = typer.Option(None, "--mode", help="look or compare; default from config"),
+    no_verify: bool = typer.Option(False, "--no-verify", help="look mode without the evidence checks"),
 ) -> None:
     """Score retrieval (and optionally answers) against a hand-checked question set."""
     from frameseek.answer import describe_parts, fmt_time, fuse
-    from frameseek.evaluate import first_hit, is_hit, load_eval, summarise, text_ok
+    from frameseek.evaluate import first_hit, is_hit, load_eval, outcome, summarise, summarise_answers, text_ok
+    from frameseek.ingest import write_json_atomic
     from frameseek.models.vision import OllamaError
     from frameseek.index import build_index, score_all
     from frameseek.pipeline import Asker
@@ -767,60 +769,115 @@ def eval_cmd(
     if answer:
         table.add_column("answer")
     mode = mode or cfg.answer.mode
-    ranks, chose_right, abstained, seconds, calls, texts, rejected, errors = [], 0, 0, [], [], [], 0, 0
+    if no_verify:
+        cfg.answer.verify = False
+    label = mode + ("" if mode == "compare" or cfg.answer.verify else "-noverify")
+    ranks, outcomes, seconds, calls, texts, rejected, records = [], [], [], [], [], 0, []
     for it in items:
         frames, speech, scores = score_all(video_dir, it.q, asker.text, asker.image)
         moments = fuse(frames, speech, scores)
-        r = first_hit(moments, it, speech)
+        r = None if it.absent else first_hit(moments, it, speech)
         ranks.append(r)
         top = moments[0] if moments else None
-        row = ["[green]✓[/green]" if r and r <= n else "[red]✗[/red]", str(r or "-"), it.kind, escape(it.q),
+        mark = "[dim]·[/dim]" if it.absent else "[green]✓[/green]" if r and r <= n else "[red]✗[/red]"
+        row = [mark, "absent" if it.absent else str(r or "-"), it.kind, escape(it.q),
                f"{fmt_time(top.t)} {top.file[:-4]} ({describe_parts(top)})" if top else ""]
+        rec: dict = {"q": it.q, "kind": it.kind, "absent": it.absent, "rank": r}
         if answer:
             try:
-                with log.status(f"Answering ({mode}): {it.q}"):
+                with log.status(f"Answering ({label}): {it.q}"):
                     a = asker.answer(video_dir, it.q, moments, mode)
-                seconds.append(a.timing.total_s)
-                calls.append(len([st for st in a.steps if st.timing]) or 1)
-                rejected += sum(1 for st in a.steps if st.kind == "check" and not st.present)
-            except OllamaError as e:   # one failed question shouldn't end a 20-minute run
-                errors += 1
+            except OllamaError as e:   # one failed question shouldn't end a long run
+                outcomes.append("error")
+                rec.update(outcome="error", error=str(e)[:300])
+                records.append(rec)
                 row.append(f"[red]error[/red]: {escape(str(e)[:70])}")
                 table.add_row(*row)
                 continue
-            if a.moment is None:
-                abstained += 1
-                verdict = "[yellow]no moment[/yellow]"
-            elif is_hit(a.moment, it, speech):
-                chose_right += 1
-                verdict = "[green]right moment[/green]"
-            else:
-                verdict = "[red]wrong moment[/red]"
-            ok = text_ok(a.text, it)
+            n_calls = len([st for st in a.steps if st.timing]) or 1
+            fails = sum(1 for st in a.steps if st.kind == "check" and not st.present)
+            seconds.append(a.timing.total_s)
+            calls.append(n_calls)
+            rejected += fails
+            res = outcome(a.moment, bool(a.moment and is_hit(a.moment, it, speech)), it)
+            outcomes.append(res)
+            verdict = {"right": "[green]right moment[/green]", "wrong": "[red]wrong moment[/red]",
+                       "abstained": "[yellow]no moment[/yellow]", "abstained_ok": "[green]rightly none[/green]",
+                       "false_answer": "[red]answered, but it's not in the video[/red]"}[res]
+            ok = text_ok(a.text, it) if a.moment else None
             if ok is not None:
                 texts.append(ok)
                 verdict += " [green]text ok[/green]" if ok else f" [red]text should include {escape(', '.join(it.contains))}[/red]"
-            fails = sum(1 for st in a.steps if st.kind == "check" and not st.present)
             row.append(f"{verdict}: {escape(a.text[:70])}"
-                       + (f" [dim]({len([st for st in a.steps if st.timing])} calls"
-                          + (f", {fails} rejected by checks" if fails else "") + ")[/dim]" if a.steps else ""))
+                       + (f" [dim]({n_calls} calls" + (f", {fails} rejected by checks" if fails else "") + ")[/dim]"
+                          if a.steps else ""))
+            rec.update(outcome=res, text_ok=ok, answer=a.text, confidence=a.confidence,
+                       moment_t=a.moment.t if a.moment else None, moment_file=a.moment.file if a.moment else None,
+                       seconds=round(a.timing.total_s, 1), calls=n_calls, rejected_by_checks=fails,
+                       steps=[{"kind": st.kind, "t": st.moment.t, "file": st.moment.file, "present": st.present,
+                               "seen": st.seen, "source": st.source, "quote": st.quote,
+                               "check": None if not st.check else {
+                                   "status": st.check.status, "quote_score": st.check.quote_score,
+                                   "reason": st.check.reason}}
+                              for st in a.steps])
+        records.append(rec)
         table.add_row(*row)
     log.print(table)
     s = summarise(items, ranks, n)
     kinds = "  ".join(f"{k} {ok}/{tot}" for k, (ok, tot) in s.by_kind.items())
-    log.print(f"\n[bold]hit@1 {s.hit1}/{s.n}   hit@{n} {s.hit_top}/{s.n}   MRR {s.mrr:.2f}[/bold]   [dim]{kinds}[/dim]")
+    log.print(f"\n[bold]retrieval: hit@1 {s.hit1}/{s.n}   hit@{n} {s.hit_top}/{s.n}   MRR {s.mrr:.2f}[/bold]   [dim]{kinds}[/dim]")
     if answer:
-        log.print(f"[bold]{mode}: answering model picked the right moment {chose_right}/{s.n}[/bold], "
-                  f"said none answers it {abstained}/{s.n}  [dim](check the answer text by eye)[/dim]")
-        answered = s.n - abstained - errors
-        log.print(f"[bold]answered {answered}/{s.n}: right moment {chose_right}, wrong {answered - chose_right}; "
-                  f"abstained {abstained}" + (f"; errors {errors}" if errors else "") + "[/bold]"
+        a_sum = summarise_answers(outcomes)
+        present, absent = s.n, sum(it.absent for it in items)
+        log.print(f"[bold]{label}: {present} questions in the video: right {a_sum.right}, wrong {a_sum.wrong}, "
+                  f"can't tell {a_sum.abstained}" + (f", errors {a_sum.errors}" if a_sum.errors else "") + "[/bold]")
+        if absent:
+            log.print(f"[bold]{absent} not in the video: rightly said none {a_sum.absent_ok}, "
+                      f"answered anyway {a_sum.false_answers}[/bold]")
+        log.print(f"[bold]right when it answers: {a_sum.right}/{a_sum.answered} = {a_sum.accuracy_when_answering:.0%}[/bold]"
                   + (f"  [dim](evidence checks rejected {rejected} candidate answers)[/dim]" if rejected else ""))
         if texts:
             log.print(f"[bold]exact answer text right {sum(texts)}/{len(texts)}[/bold] [dim](questions with `contains`)[/dim]")
         if seconds:
             log.print(f"[dim]model time per question: mean {sum(seconds) / len(seconds):.0f}s, "
                       f"max {max(seconds):.0f}s; calls per question: mean {sum(calls) / len(calls):.1f}[/dim]")
+        out = Path("evals") / "results" / f"{meta.id}-{label}.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(out, {"video": meta.id, "title": meta.title, "mode": label, "model": asker.model_name,
+                                "questions": records})
+        log.print(f"[dim]Saved per-question results to {out}[/dim]")
+
+
+@app.command("prepare")
+def prepare_cmd(
+    urls: list[str] = typer.Argument(..., help="One or more YouTube URLs or video IDs"),
+) -> None:
+    """Run every indexing step for one or more videos; cached steps are skipped.
+
+    Download, shots, speech, captions, search index: the same as the UI's
+    Prepare button. Several videos run one after another, so a batch can be
+    left running.
+    """
+    from frameseek.pipeline import prepare as run
+
+    cfg = load_config()
+    for url in urls:
+        start = time.perf_counter()
+        stage = {"name": "", "t": start}
+        with log.status("Starting...") as status:
+            def on_status(msg: str) -> None:
+                if msg.startswith("Captioning keyframes:"):   # progress within a stage
+                    status.update(msg)
+                    return
+                now = time.perf_counter()
+                if stage["name"]:
+                    log.print(f"  {stage['name']} [dim]{now - stage['t']:.0f}s[/dim]")
+                stage.update(name=msg, t=now)
+                status.update(msg)
+
+            p = run(url, cfg, on_status)
+        log.print(f"[green]Ready[/green] {escape(p.title)} [dim]({p.video_id}, "
+                  f"{(time.perf_counter() - start) / 60:.1f} min)[/dim]\n")
 
 
 @app.command()

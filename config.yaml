@@ -36,7 +36,8 @@ transcribe:
 caption:
   model: qwen3-vl:4b-instruct   # ~1.9x faster than the 8B per frame, same summary on our test frame; empty = vision.model
   max_image_side: 1024    # Ollama resizes every image to its own size: smaller saves nothing, loses detail
-  num_predict: 300        # hard cap on output tokens per frame
+  num_predict: 600        # output cap per frame. Text-heavy frames (a news article screenshot) need
+                          # more than 300; ~130 is typical, so the cap rarely costs anything
 
 embed:
   text_model: intfloat/multilingual-e5-small      # questions vs captions and speech; e5-base tested: no better

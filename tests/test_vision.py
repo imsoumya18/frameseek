@@ -7,7 +7,7 @@ import httpx
 from PIL import Image
 
 from frameseek.config import VisionConfig
-from frameseek.models.vision import Done, OllamaVision, Status, Token, encode_image
+from frameseek.models.vision import Done, OllamaError, OllamaVision, Status, Token, encode_image
 
 
 def _make_image(tmp_path: Path, size=(2000, 1000)) -> Path:
@@ -95,3 +95,32 @@ def test_unload_sends_keep_alive_zero() -> None:
     cfg = VisionConfig(model="qwen3-vl:4b-instruct")
     OllamaVision(cfg, client=httpx.Client(base_url=cfg.host, transport=httpx.MockTransport(handler))).unload()
     assert seen == {"path": "/api/generate", "body": {"model": "qwen3-vl:4b-instruct", "keep_alive": 0}}
+
+
+def test_cut_off_json_is_retried_once_with_some_randomness() -> None:
+    temps = []
+    looped = '{"summary": "book cover", "objects": [{"name": "book", "colour": "' + " " * 50
+    good = '{"summary": "book cover"}'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        temps.append(json.loads(request.content)["options"]["temperature"])
+        content = looped if len(temps) == 1 else good
+        return httpx.Response(200, json={"message": {"content": content}, "done": True})
+
+    cfg = VisionConfig(model="qwen3-vl:4b-instruct")
+    vm = OllamaVision(cfg, client=httpx.Client(base_url=cfg.host, transport=httpx.MockTransport(handler)))
+    out, _ = vm.structured(None, "describe", {"type": "object"})
+    assert out == {"summary": "book cover"} and temps == [0.0, 0.4]
+
+
+def test_cut_off_twice_raises_with_the_tail_shown() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"message": {"content": '{"a": "' + "xy" * 100}, "done": True})
+
+    cfg = VisionConfig()
+    vm = OllamaVision(cfg, client=httpx.Client(base_url=cfg.host, transport=httpx.MockTransport(handler)))
+    try:
+        vm.structured(None, "p", {"type": "object"})
+        raise AssertionError("expected OllamaError")
+    except OllamaError as exc:
+        assert "twice" in str(exc) and "xyxy'" in str(exc)
